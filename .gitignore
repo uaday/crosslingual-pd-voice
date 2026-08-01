@@ -1,0 +1,101 @@
+# ─────────────────────────────────────────────────────────────
+# PD-research .gitignore
+# Goal: keep the repo to code + docs. NEVER commit datasets.
+# The voice datasets carry data-use agreements (mPower/Synapse,
+# Bridge2AI/PhysioNet, PC-GITA) that prohibit redistribution, and
+# the derived CSVs contain participant identifiers (healthCode) and
+# real participant names. Data stays local only.
+# ─────────────────────────────────────────────────────────────
+
+# ── OS / editor junk ──
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+Desktop.ini
+.vscode/
+.idea/
+*.swp
+*~
+
+# ── Datasets: ignore everything under pd-datasets ...
+pd-datasets/*
+# ... but keep the mpower pipeline scripts (they're shareable code) ...
+!pd-datasets/mpower/
+pd-datasets/mpower/*
+!pd-datasets/mpower/*.py
+# ... and keep any README you add to describe the data layout.
+!pd-datasets/README.md
+!pd-datasets/mpower/README.md
+
+# Bridge2AI / PC-GITA folders (added later) are covered by pd-datasets/*
+# Extra safety net — audio & caches anywhere in the tree:
+*.wav
+*.m4a
+*.mp3
+*.flac
+*.ogg
+*.aac
+*.tmp
+synapse_cache/
+**/synapse_cache/
+wav/
+**/wav/
+
+# Participant-identifying / derived metadata (contain healthCode + paths)
+voice_activity_metadata.csv
+audio_file_manifest.csv
+audio_no_usable_signal.csv
+*.xlsx
+
+# ── Reference coursework (kept locally, not part of this repo) ──
+ml-code-work-earlier/
+
+# ── Python ──
+__pycache__/
+*.py[cod]
+*$py.class
+.ipynb_checkpoints/
+.venv/
+venv/
+env/
+ENV/
+.python-version
+
+# ── Credentials / secrets (never commit) ──
+.env
+.env.*
+.synapseConfig
+*token*
+*.key
+*secret*
+
+# ── ML artifacts / model weights / caches ──
+*.pt
+*.pth
+*.ckpt
+*.onnx
+*.h5
+*.hdf5
+*.pkl
+*.pickle
+*.joblib
+*.npy
+*.npz
+embeddings/
+checkpoints/
+runs/
+wandb/
+mlruns/
+.cache/
+hf_cache/
+*.log
+
+# ── Archives / large binaries ──
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.7z
