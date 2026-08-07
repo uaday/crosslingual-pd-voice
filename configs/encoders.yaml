@@ -1,0 +1,22 @@
+# Encoder configuration for the three-layer validation matrix (PROJECT_CONTEXT.md §4.5).
+# Default mode is FROZEN embeddings (cached) — fits the 5 GB vGPU and matches the field.
+
+mode: frozen            # frozen (default) | finetune (wav2vec2-base only) | lora
+
+# Layer 1 — monolingual SSL baselines
+layer1:
+  - {key: wav2vec2-base, layer: null, pooling: mean_std}
+  - {key: wavlm-large,   layer: null, pooling: mean_std}
+  - {key: hubert-large,  layer: null, pooling: mean_std}
+
+# Layer 2 — multilingual backbone (applied locked to the external sets)
+layer2:
+  - {key: xls-r-300m, layer: 12, pooling: mean_std}
+  # xls-r-1b optional (frozen, batch 1-4); xls-r-2b does NOT fit 5 GB.
+
+head:
+  hidden: 256
+  dropout: 0.3
+  lr: 0.001
+  max_epochs: 200
+  patience: 20

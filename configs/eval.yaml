@@ -1,0 +1,18 @@
+# Evaluation configuration (PROJECT_CONTEXT.md §4.3, §4.4).
+operating_point: youden_j        # threshold selected on the validation fold
+target_specificity: 0.90         # also report sensitivity at this specificity
+
+calibration:
+  candidates: [temperature, platt, isotonic]
+  select_by: brier               # fit on val, lock before test
+  ece_bins: 10
+
+dca:
+  threshold_start: 0.05          # plausible PD screening band
+  threshold_stop: 0.30
+  threshold_step: 0.01
+
+significance:
+  n_bootstrap: 1000
+  auroc_test: [delong, paired_bootstrap]
+  decision_test: mcnemar
