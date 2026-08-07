@@ -60,9 +60,10 @@ __pycache__/
 .ipynb_checkpoints/
 .venv/
 venv/
-env/
 ENV/
 .python-version
+# NOTE: bare "env/" is intentionally NOT ignored — this repo uses env/ for the
+# conda environment.yml + SETUP.md. Conda envs are named (pdvoice), not local.
 
 # ── Credentials / secrets (never commit) ──
 .env
@@ -99,3 +100,14 @@ hf_cache/
 *.tar.gz
 *.tgz
 *.7z
+
+# ── Project working dirs (created at runtime by pdvoice.config) ──
+/data/
+/outputs/
+
+# ── Python build artifacts ──
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/

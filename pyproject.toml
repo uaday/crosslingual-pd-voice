@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pdvoice"
+version = "0.1.0"
+description = "Voice-based Parkinson's disease detection with cross-dataset and multilingual evaluation"
+authors = [{ name = "Sudipta Ghosh" }]
+requires-python = ">=3.10"
+readme = "README.md"
+# Heavy deps (torch, transformers, librosa, ...) come from env/environment.yml.
+# These are the light ones needed for the package to import and be tested.
+dependencies = [
+    "numpy<2.0",
+    "pandas",
+    "scipy",
+    "scikit-learn",
+    "pyyaml",
+    "joblib",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "ruff", "black"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.black]
+line-length = 100
+target-version = ["py310"]

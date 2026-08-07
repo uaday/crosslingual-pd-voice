@@ -1,0 +1,15 @@
+# Default run configuration. The pipeline is dataset-agnostic — swap train_dataset
+# to flip mPower <-> Bridge2AI without code changes (PROJECT_CONTEXT.md §3.4).
+seed: 42
+sample_rate: 16000
+n_folds: 5
+val_fraction: 0.15
+
+train_dataset: mpower
+external_datasets: [bridge2ai, mdvr_kcl, ipvs, neurovoz, ewadb]
+
+preprocess:
+  vowel_core_seconds: 2.0
+  chunk_seconds: 5.0
+  chunk_overlap: 0.5
+  min_duration_seconds: 1.0
