@@ -17,7 +17,7 @@ MPOWER_DIR = PD_DATASETS / "mpower"
 IPVS_DIR = PD_DATASETS / "Italian Parkinson's Voice and speech"
 MDVR_KCL_DIR = PD_DATASETS / "26-29_09_2017_KCL"
 BRIDGE2AI_DIR = PD_DATASETS / "bridge2ai"   # when downloaded
-NEUROVOZ_DIR = PD_DATASETS / "neurovoz"     # when access granted
+NEUROVOZ_DIR = PD_DATASETS / "neurovoz_v3"  # NeuroVoz v3 (Zenodo), audios under data/audios/
 EWADB_DIR = PD_DATASETS / "ewadb"           # when access granted
 
 # --- working cache + outputs (git-ignored; created at runtime) ---

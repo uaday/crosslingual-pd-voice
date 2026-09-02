@@ -6,7 +6,15 @@ Folder layout (see PROJECT_CONTEXT.md §3.2):
     <root>/28 People with Parkinson's disease/<1-5|.../<Speaker>/<CODE...>.wav -> PD
 
 File names begin with a task code: V[AEIOU]=sustained vowel; PR/FB/B/D=reading /
-sentence / word tasks (treated as connected speech). 44.1 kHz.
+sentence / word tasks (treated as connected speech).
+
+SAMPLE RATE IS MIXED, and the split is confounded with the label: PD speaker
+folders ``1-5`` and ``6-10`` (10 of 28 patients) are 44.1 kHz, while the other 18
+patients and ALL 37 controls are 16 kHz. Native rate 44.1 kHz therefore implies PD
+with perfect precision -- rate alone scores subject-level AUROC 0.679. The artifact
+survives resampling into the SPEECH embeddings (within-PD probe AUROC 0.777) but
+not the vowel ones (0.519), because only speech has fricative energy near the 8 kHz
+anti-alias rolloff. Read the rate per file; never assume it.
 """
 
 from __future__ import annotations
@@ -23,6 +31,16 @@ _GROUPS = {
     "22 Elderly Healthy Control": (0, "ehc"),
     "28 People with Parkinson's disease": (1, "pd"),
 }
+
+
+def _native_sr(path) -> int | None:
+    """True sample rate from the file header (IPVS mixes 16 kHz and 44.1 kHz)."""
+    import soundfile as sf
+
+    try:
+        return int(sf.info(str(path)).samplerate)
+    except Exception:  # noqa: BLE001 — unreadable file; QC drops it downstream
+        return None
 
 
 def _task_code(stem: str) -> str:
@@ -63,7 +81,7 @@ def load_ipvs(root=IPVS_DIR):
                     "task_kind": _task_kind(code),
                     "task_code": code,
                     "language": "it",
-                    "native_sr": 44100,
+                    "native_sr": _native_sr(wav),
                 }
             )
     return new_manifest(rows)

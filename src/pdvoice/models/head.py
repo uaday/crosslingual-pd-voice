@@ -34,15 +34,22 @@ def fit_mlp_head(
     max_epochs: int = 200,
     patience: int = 20,
     device: str | None = None,
+    seed: int = 42,
 ):
     """Train the head on cached embeddings; early-stop on val loss.
 
     Returns (model, val_logits). Use val_logits to fit the calibration map and to
     pick the operating threshold — then lock both before touching any test fold.
+
+    ``seed`` makes weight-init and dropout deterministic so results are reproducible
+    run-to-run (an unseeded head swung AUROC by up to ~0.04 on the XLS-R embeddings).
     """
     import torch
     import torch.nn as nn
 
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
     device = device or ("cuda" if torch.cuda.is_available() else "cpu")
     xt = torch.tensor(np.asarray(x_train), dtype=torch.float32, device=device)
     yt = torch.tensor(np.asarray(y_train), dtype=torch.float32, device=device)
