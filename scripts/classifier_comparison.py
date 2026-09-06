@@ -35,6 +35,7 @@ import torch
 
 from pdvoice.cohort import age_match_ids
 from pdvoice.config import EMBEDDINGS, LOGS, MPOWER_DIR
+from pdvoice.features.classical import FEATURE_NAMES
 from pdvoice.eval.discrimination import bootstrap_ci
 from pdvoice.models.head import fit_mlp_head
 from sklearn.ensemble import HistGradientBoostingClassifier, RandomForestClassifier
@@ -46,7 +47,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
 
 MODEL, LAYER = "xls-r-300m", 15
-FEATS = ["jitter_local", "shimmer_local", "hnr", "f0_mean"] + [f"mfcc_{i}" for i in range(13)]
+FEATS = FEATURE_NAMES
 
 
 def sk(name, seed):
@@ -119,7 +120,7 @@ def main() -> None:
           f"HC {merged[m_am & (merged.label==0)].age.mean():.1f})\n")
 
     CLFS = ["logreg (linear probe)", "SVM (RBF)", "Random Forest", "HistGradBoost (~XGB)", "MLP head (ours)"]
-    FEATSETS = [("SSL embeddings (2048)", X_ssl), ("classical (17)", X_cls), ("age only (1)", X_dem)]
+    FEATSETS = [("SSL embeddings (2048)", X_ssl), (f"classical ({len(FEATS)})", X_cls), ("age only (1)", X_dem)]
 
     rows = []
     for cohort, mask in [("confounded", np.ones(len(y), bool)), ("age-matched", m_am)]:
@@ -145,7 +146,7 @@ def main() -> None:
     print(f"\n{'='*78}\nDOES THE CLASSIFIER CHANGE THE STORY?\n{'='*78}")
     for cohort in ("confounded", "age-matched"):
         sub = R[(R.cohort == cohort) & (R.features != "age only (1)")]
-        for f in ("SSL embeddings (2048)", "classical (17)"):
+        for f in ("SSL embeddings (2048)", f"classical ({len(FEATS)})"):
             v = sub[sub.features == f].AUROC
             print(f"  {cohort:<12} {f:<22} spread across classifiers: "
                   f"{v.min():.3f} - {v.max():.3f}  (range {v.max()-v.min():.3f})")

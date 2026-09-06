@@ -25,34 +25,14 @@ from pdvoice.data.mpower import load_mpower
 from pdvoice.data.splits import assign_folds
 from pdvoice.eval.discrimination import auprc, auroc, bootstrap_ci
 from pdvoice.preprocess import quality_control
+from pdvoice.cohort import age_match_ids
+from pdvoice.features.classical import FEATURE_NAMES, classical_features
 from pdvoice.utils.audio import load_audio, stable_core, trim_silence
 
 warnings.filterwarnings("ignore")
 PRAAT_SR = 44100
-FEATS = ["jitter_local", "shimmer_local", "hnr", "f0_mean"] + [f"mfcc_{i}" for i in range(13)]
-
-
-def fast_classical(path) -> dict:
-    import librosa
-    import parselmouth
-    from parselmouth.praat import call
-
-    # decode only the first 4 s (sustained vowel is stationary) -> much faster load
-    y, _ = librosa.load(str(path), sr=PRAAT_SR, duration=4.0, mono=True)
-    y = stable_core(trim_silence(y), sr=PRAAT_SR, seconds=2.0).astype("float64")
-    if len(y) < PRAAT_SR // 2:
-        raise ValueError("too short")
-    snd = parselmouth.Sound(y, sampling_frequency=PRAAT_SR)
-    pp = call(snd, "To PointProcess (periodic, cc)", 75, 500)
-    jit = call(pp, "Get jitter (local)", 0, 0, 0.0001, 0.02, 1.3)
-    shi = call([snd, pp], "Get shimmer (local)", 0, 0, 0.0001, 0.02, 1.3, 1.6)
-    hnr = call(call(snd, "To Harmonicity (cc)", 0.01, 75, 0.1, 1.0), "Get mean", 0, 0)
-    f0 = call(snd.to_pitch(), "Get mean", 0, 0, "Hertz")
-    y16 = librosa.resample(y.astype("float32"), orig_sr=PRAAT_SR, target_sr=16000)
-    mfcc = librosa.feature.mfcc(y=y16, sr=16000, n_mfcc=13).mean(axis=1)
-    d = {"jitter_local": jit, "shimmer_local": shi, "hnr": hnr, "f0_mean": f0}
-    d.update({f"mfcc_{i}": float(v) for i, v in enumerate(mfcc)})
-    return d
+# feature list and extractor both live in the package now -- see features/classical.py
+FEATS = FEATURE_NAMES
 
 
 def build_cohort(cap):
@@ -73,13 +53,16 @@ def extract(df, cap, max_subjects):
     cache = EMBEDDINGS / f"mpower_classical__cap{cap}.csv"
     if cache.exists() and not max_subjects:
         f = pd.read_csv(cache)
-        if len(f) == len(df):
+        # length AND columns must match: the feature set changed on 2026-09-06 and a
+        # stale 17-column cache would silently be reused for a 42-feature experiment
+        if len(f) == len(df) and list(f.columns) == FEATS:
             print(f"  cache hit: {cache.name}")
             return f
+        print(f"  cache stale ({len(f)} rows x {len(f.columns)} cols) -> re-extracting")
     rows = []
     for p in tqdm(df["path"], unit="rec"):
         try:
-            rows.append(fast_classical(p))
+            rows.append(classical_features(p))
         except Exception:  # noqa: BLE001
             rows.append({k: np.nan for k in FEATS})
     F = pd.DataFrame(rows, columns=FEATS)
@@ -87,19 +70,6 @@ def extract(df, cap, max_subjects):
         cache.parent.mkdir(parents=True, exist_ok=True)
         F.to_csv(cache, index=False)
     return F
-
-
-def age_match_mask(df, seed=SEED):
-    s = df.dropna(subset=["age"]).drop_duplicates("subject_id")[["subject_id", "label", "age"]]
-    s = s.assign(bin=(s["age"] // 5 * 5))
-    rng = np.random.default_rng(seed)
-    keep = []
-    for _, g in s.groupby("bin"):
-        k = min((g.label == 1).sum(), (g.label == 0).sum())
-        if k:
-            keep += g[g.label == 1]["subject_id"].sample(k, random_state=seed).tolist()
-            keep += g[g.label == 0]["subject_id"].sample(k, random_state=seed).tolist()
-    return df["subject_id"].isin(keep).to_numpy()
 
 
 def cv_auroc(df, F, y, model):
@@ -156,7 +126,7 @@ def main():
     lab_out = df[["subject_id", "label", "age"]].reset_index(drop=True).join(F)
     lab_out.to_csv(LOGS / f"classical_features_labeled__cap{args.cap}.csv", index=False)
 
-    scenarios = {"baseline": np.ones(len(df), bool), "age-matched": age_match_mask(df)}
+    scenarios = {"baseline": np.ones(len(df), bool), "age-matched": df.subject_id.isin(age_match_ids(df)).to_numpy()}
     print(f"\n  {'scenario':<13}{'model':<6}{'AUROC':<22}{'AUPRC':<8}{'PD/HC subj'}")
     SSL_REF = {"baseline": 0.803, "age-matched": 0.621}   # XLS-R L15 within-mPower
     results = {"cap": args.cap, "n_rec": len(df), "SSL_reference": SSL_REF, "scenarios": {}}
