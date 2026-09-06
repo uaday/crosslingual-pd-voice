@@ -33,6 +33,7 @@ import pandas as pd
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 
+from pdvoice.cohort import age_match_ids
 from pdvoice.config import FIGURES, LOGS, MPOWER_DIR, SAMPLE_RATE  # noqa: E402
 from pdvoice.data.mpower import load_mpower  # noqa: E402
 from pdvoice.data.neurovoz import load_neurovoz  # noqa: E402
@@ -54,18 +55,6 @@ def ltas(path, seconds=2.0):
     if not np.isfinite(tot) or tot <= 0:
         return None
     return p / tot                          # shape only — removes gain differences
-
-
-def age_match(subj, seed, bin_width=5):
-    rng = np.random.default_rng(seed)
-    s = subj.dropna(subset=["age"]).assign(bin=lambda d: (d.age // bin_width * bin_width).astype(int))
-    keep = []
-    for _, g in s.groupby("bin"):
-        p_, h_ = g[g.label == 1].subject_id.to_numpy(), g[g.label == 0].subject_id.to_numpy()
-        k = min(len(p_), len(h_))
-        if k:
-            keep += rng.choice(p_, k, replace=False).tolist() + rng.choice(h_, k, replace=False).tolist()
-    return set(keep)
 
 
 def collect(df, per_group, seed):
@@ -134,7 +123,7 @@ def main() -> None:
     mp["age"] = mp.subject_id.str.replace("mpower_", "", regex=False).map(age)
 
     subj = mp.drop_duplicates("subject_id")[["subject_id", "label", "age"]]
-    keep = age_match(subj, args.seed)
+    keep = age_match_ids(subj, args.seed)
     mp_am = mp[mp.subject_id.isin(keep)]
     print(f"mPower raw       : {subj.subject_id.nunique():,} subjects "
           f"(PD age {subj[subj.label==1].age.mean():.1f}, HC age {subj[subj.label==0].age.mean():.1f})")

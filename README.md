@@ -108,6 +108,15 @@ flowchart TD
 The notebook does **no experiments**. It reads the result files the scripts wrote. If a
 result file is missing it tells you which script to run.
 
+**The notebook is a normal file you edit directly** — open it in Jupyter or VS Code and
+change anything. There is no generator; nothing regenerates it.
+
+**Shared cohort logic lives in one place.** `src/pdvoice/cohort.py` holds the single
+implementation of loading mPower, capping recordings per speaker, age-matching and
+subject-level aggregation. Every script imports it. It used to be copy-pasted into four
+scripts plus the notebook, and the copies drifted — two runs produced age-matched groups
+with different mean ages purely because rows arrived in a different order.
+
 ---
 
 ## 4. Setup

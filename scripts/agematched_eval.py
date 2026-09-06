@@ -26,6 +26,7 @@ import torch
 from sklearn.metrics import brier_score_loss, roc_curve
 from sklearn.model_selection import GroupShuffleSplit
 
+from pdvoice.cohort import age_match_ids
 from pdvoice.calibration import select_best_by_brier
 from pdvoice.config import EMBEDDINGS, FIGURES, LOGS, MODELS, MPOWER_DIR, SEED, VAL_FRACTION, ensure_dirs
 from pdvoice.data import LOADERS
@@ -58,22 +59,6 @@ def mpower_df():
     age = dict(zip(d["healthCode"].astype(str), d["age"]))
     df["age"] = df["subject_id"].str.replace("mpower_", "", regex=False).map(age)
     return df
-
-
-def age_match_ids(df, seed=SEED, bin_width=5):
-    """Frequency-match PD & HC age distributions: per age-bin keep min(nPD,nHC) of each."""
-    subj = df.dropna(subset=["age"]).drop_duplicates("subject_id")[["subject_id", "label", "age"]]
-    subj = subj.assign(bin=(subj["age"] // bin_width * bin_width).astype(int))
-    rng = np.random.default_rng(seed)
-    keep = []
-    for _, g in subj.groupby("bin"):
-        pd_ids = g[g.label == 1]["subject_id"].to_numpy()
-        hc_ids = g[g.label == 0]["subject_id"].to_numpy()
-        k = min(len(pd_ids), len(hc_ids))
-        if k:
-            keep += rng.choice(pd_ids, k, replace=False).tolist()
-            keep += rng.choice(hc_ids, k, replace=False).tolist()
-    return set(keep)
 
 
 def metrics_block(y, p, thr):

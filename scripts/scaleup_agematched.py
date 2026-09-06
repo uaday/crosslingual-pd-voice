@@ -29,6 +29,7 @@ import numpy as np
 import pandas as pd
 import torch
 
+from pdvoice.cohort import age_match_ids, cap_per_subject
 from pdvoice.calibration import select_best_by_brier
 from pdvoice.config import EMBEDDINGS, LOGS, MPOWER_DIR, VAL_FRACTION, ensure_dirs
 from pdvoice.data import LOADERS
@@ -59,24 +60,6 @@ def load_full():
     return df, d["X"].astype(np.float32)
 
 
-def cap_and_match(df, cap, seed, bin_width=5):
-    """Per seed: redraw the capped recordings AND the age-matched subject set."""
-    rng = np.random.default_rng(seed)
-    d = df.sample(frac=1.0, random_state=seed)
-    if cap:
-        d = d[d.groupby("subject_id").cumcount().to_numpy() < cap]
-    subj = d.dropna(subset=["age"]).drop_duplicates("subject_id")[["subject_id", "label", "age"]]
-    subj = subj.assign(bin=(subj.age // bin_width * bin_width).astype(int))
-    keep = []
-    for _, g in subj.groupby("bin"):
-        p_, h_ = g[g.label == 1].subject_id.to_numpy(), g[g.label == 0].subject_id.to_numpy()
-        k = min(len(p_), len(h_))
-        if k:
-            keep += rng.choice(p_, k, replace=False).tolist()
-            keep += rng.choice(h_, k, replace=False).tolist()
-    return d[d.subject_id.isin(set(keep))].sort_index()
-
-
 def block(y, p, thr):
     pt, lo, hi = bootstrap_ci(y, p)
     return {"n": int(len(y)), "n_pd": int(y.sum()), "auroc": round(pt, 4),
@@ -89,7 +72,9 @@ def block(y, p, thr):
 
 
 def run_seed(df, X, cap, seed, conv):
-    am = cap_and_match(df, cap, seed)
+    capped = cap_per_subject(df, cap, seed)
+    keep = age_match_ids(capped, seed)
+    am = capped[capped.subject_id.isin(keep)]
     idx = am.index.to_numpy()
     Xa, y = X[idx], am.label.to_numpy()
     am = am.reset_index(drop=True)
