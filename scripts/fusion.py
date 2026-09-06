@@ -19,7 +19,9 @@ import numpy as np
 import pandas as pd
 import torch
 
+from pdvoice.cohort import age_match_ids
 from pdvoice.config import EMBEDDINGS, MPOWER_DIR, SEED
+from pdvoice.features.classical import FEATURE_NAMES
 from pdvoice.data.mpower import load_mpower
 from pdvoice.data.splits import assign_folds, train_val_test_indices
 from pdvoice.eval.discrimination import auprc, auroc, bootstrap_ci
@@ -27,7 +29,7 @@ from pdvoice.models.head import fit_mlp_head
 from pdvoice.preprocess import quality_control
 
 MODEL, LAYER, CAP = "xls-r-300m", 15, 1
-FEATS = ["jitter_local", "shimmer_local", "hnr", "f0_mean"] + [f"mfcc_{i}" for i in range(13)]
+FEATS = FEATURE_NAMES
 
 
 def build_cohort():
@@ -63,19 +65,6 @@ def embed_ssl(df):
     X = np.vstack(vecs).astype(np.float16)
     np.savez_compressed(cache, X=X)
     return X.astype(np.float32)
-
-
-def age_match_mask(df, seed=SEED):
-    s = df.dropna(subset=["age"]).drop_duplicates("subject_id")[["subject_id", "label", "age"]]
-    s = s.assign(bin=(s["age"] // 5 * 5))
-    rng = np.random.default_rng(seed)
-    keep = []
-    for _, g in s.groupby("bin"):
-        k = min((g.label == 1).sum(), (g.label == 0).sum())
-        if k:
-            keep += g[g.label == 1]["subject_id"].sample(k, random_state=seed).tolist()
-            keep += g[g.label == 0]["subject_id"].sample(k, random_state=seed).tolist()
-    return df["subject_id"].isin(keep).to_numpy()
 
 
 def within_cv(df, X, y):
@@ -116,7 +105,7 @@ def main():
     sets = {"SSL-only": S, "classical-only": C, "FUSION": F}
     print(f"  {'scenario':<13}{'features':<16}{'AUROC':<22}{'AUPRC'}")
     results = {"cohort": len(df), "dims": {"ssl": S.shape[1], "classical": C.shape[1]}, "scenarios": {}}
-    for scen, mask in {"baseline": np.ones(len(df), bool), "age-matched": age_match_mask(df)}.items():
+    for scen, mask in {"baseline": np.ones(len(df), bool), "age-matched": df.subject_id.isin(age_match_ids(df)).to_numpy()}.items():
         results["scenarios"][scen] = {}
         for name, X in sets.items():
             a, lo, hi, ap, g = within_cv(df[mask].reset_index(drop=True), X[mask], y[mask])

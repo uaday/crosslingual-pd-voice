@@ -15,6 +15,7 @@ import pandas as pd
 import torch
 
 from pdvoice.calibration import select_best_by_brier
+from pdvoice.cohort import age_match_ids
 from pdvoice.config import EMBEDDINGS, MPOWER_DIR, SEED  # noqa: F401
 from pdvoice.config import PD_DATASETS
 from pdvoice.data import LOADERS
@@ -103,13 +104,7 @@ def main():
     print(f"\n[2] Label-permutation sanity: shuffled-label AUROC = {a_shuf:.3f}  (expect ~0.5)")
 
     # 3a. age-matched (5yr bins)
-    sm = subj.dropna(subset=["age"]).assign(bin=(subj["age"] // 5 * 5))
-    keep = []
-    for _, g in sm.groupby("bin"):
-        k = min((g.label == 1).sum(), (g.label == 0).sum())
-        if k:
-            keep += g[g.label == 1]["subject_id"].sample(k, random_state=SEED).tolist()
-            keep += g[g.label == 0]["subject_id"].sample(k, random_state=SEED).tolist()
+    keep = age_match_ids(subj, seed=SEED)
     mask = df["subject_id"].isin(keep).to_numpy()
     npd = subj[(subj.label==1) & subj.subject_id.isin(keep)].shape[0]
     nhc = subj[(subj.label==0) & subj.subject_id.isin(keep)].shape[0]
