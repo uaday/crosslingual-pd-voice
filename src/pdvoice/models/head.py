@@ -64,7 +64,9 @@ def fit_mlp_head(
     opt = torch.optim.Adam(model.parameters(), lr=lr)
 
     best_state, best_val, wait = None, float("inf"), 0
+    epochs_run, stopped_early = 0, False
     for _ in range(max_epochs):
+        epochs_run += 1
         model.train()
         opt.zero_grad()
         loss = loss_fn(model(xt).squeeze(-1), yt)
@@ -79,6 +81,7 @@ def fit_mlp_head(
         else:
             wait += 1
             if wait >= patience:
+                stopped_early = True
                 break
 
     if best_state is not None:
@@ -86,4 +89,11 @@ def fit_mlp_head(
     model.eval()
     with torch.no_grad():
         val_logits = model(xv).squeeze(-1).cpu().numpy()
+    # Diagnostics for the caller (attributes, so the return signature is unchanged).
+    # stopped_early False means training hit `max_epochs` with validation loss still
+    # improving -- i.e. the head is UNDERFITTED and every downstream number is
+    # pessimistic. Worth asserting on when the training set grows.
+    model._epochs_run = epochs_run
+    model._stopped_early = stopped_early
+    model._best_val_loss = best_val
     return model, val_logits
