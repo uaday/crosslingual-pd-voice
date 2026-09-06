@@ -42,12 +42,18 @@ def cap_per_subject(df: pd.DataFrame, cap: int | None, seed: int = SEED) -> pd.D
     cap the heavy users dominate the training distribution -- measurably so: at cap-ALL
     the within-mPower score falls from 0.649 to 0.604 and calibration degrades badly.
     ``cap=None`` or ``0`` keeps everything.
+
+    THE INDEX IS PRESERVED ON PURPOSE. Callers routinely hold a feature matrix whose rows
+    line up with the *input* frame and then select with ``X[df.index.to_numpy()]``.
+    Resetting the index here silently pairs every recording with someone else's
+    embedding, which does not raise -- it just returns chance performance. Reset the
+    index at the end of a pipeline, never in the middle of one.
     """
     if not cap:
-        return df.reset_index(drop=True)
+        return df
     shuffled = df.sample(frac=1.0, random_state=seed)
     kept = shuffled[shuffled.groupby("subject_id").cumcount().to_numpy() < cap]
-    return kept.sort_index().reset_index(drop=True)
+    return kept.sort_index()
 
 
 def age_match_ids(df: pd.DataFrame, seed: int = SEED,
@@ -106,7 +112,7 @@ def load_mpower_cohort(cap: int | None = None, seed: int = SEED,
     if with_qc:
         df, _ = quality_control(df)
         df = df.reset_index(drop=True)
-    df = cap_per_subject(df, cap, seed)
+    df = cap_per_subject(df, cap, seed).reset_index(drop=True)
     return attach_age(df)
 
 
