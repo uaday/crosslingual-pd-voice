@@ -168,12 +168,12 @@ Set `HF_HUB_DISABLE_SYMLINKS_WARNING=1` before running anything, to silence a Wi
 
 | Script | What it actually does |
 |---|---|
-| `data_inventory.py` | Opens every audio file and reports what is really in it — sample rate, bit depth, mono/stereo, duration. Catches datasets that disagree with their own documentation. |
-| `pipeline_trace.py` | Walks one recording through all 8 steps above and prints the exact size and loudness at each stage. Good for the methods chapter. |
-| `voice_fundamentals_figs.py` | Draws waveform / spectrum / spectrogram / mel pictures. ⚠️ **One random recording per picture** — these illustrate what a spectrogram *is*, they do **not** prove any PD/healthy difference. |
-| `group_spectra.py` | The honest version of the above: averages over 150 speakers per group. Shows the age confound in the raw sound, before any AI is involved. |
-| `silence_audit.py` | Finds recordings that are too quiet or empty. |
-| `amplitude_vs_harmonics.py` | Tests the supervisor's objection: *is a quiet recording actually a bad recording?* Answer: no. Turn the volume down 60 dB and back up, and every voice measurement is identical. So **never throw away audio for being quiet** — check whether there is a *voice* in it instead. |
+| `audits/data_inventory.py` | Opens every audio file and reports what is really in it — sample rate, bit depth, mono/stereo, duration. Catches datasets that disagree with their own documentation. |
+| `audits/pipeline_trace.py` | Walks one recording through all 8 steps above and prints the exact size and loudness at each stage. Good for the methods chapter. |
+| `audits/voice_fundamentals_figs.py` | Draws waveform / spectrum / spectrogram / mel pictures. ⚠️ **One random recording per picture** — these illustrate what a spectrogram *is*, they do **not** prove any PD/healthy difference. |
+| `audits/group_spectra.py` | The honest version of the above: averages over 150 speakers per group. Shows the age confound in the raw sound, before any AI is involved. |
+| `audits/silence_audit.py` | Finds recordings that are too quiet or empty. |
+| `audits/amplitude_vs_harmonics.py` | Tests the supervisor's objection: *is a quiet recording actually a bad recording?* Answer: no. Turn the volume down 60 dB and back up, and every voice measurement is identical. So **never throw away audio for being quiet** — check whether there is a *voice* in it instead. |
 
 ### The main experiments
 
@@ -191,9 +191,9 @@ Set `HF_HUB_DISABLE_SYMLINKS_WARNING=1` before running anything, to silence a Wi
 
 | Script | What it actually does |
 |---|---|
-| `verify_neurovoz.py` | The Spanish speech score of 0.95 looks too good. Is it a bug? (Tests shuffled labels, age, sex, recording dates. **It's genuine.**) |
-| `verify_ipvs.py` | The Italian score of 1.00 looks impossible. Is it the young healthy volunteers? (**No.**) |
-| `verify_ipvs_batch.py` | Follow-up: Italian patients 1–10 were recorded at a different sample rate than everyone else, which the model could cheat on. Does removing them change anything? (**No — but it must still be disclosed.**) |
+| `verify/verify_neurovoz.py` | The Spanish speech score of 0.95 looks too good. Is it a bug? (Tests shuffled labels, age, sex, recording dates. **It's genuine.**) |
+| `verify/verify_ipvs.py` | The Italian score of 1.00 looks impossible. Is it the young healthy volunteers? (**No.**) |
+| `verify/verify_ipvs_batch.py` | Follow-up: Italian patients 1–10 were recorded at a different sample rate than everyone else, which the model could cheat on. Does removing them change anything? (**No — but it must still be disclosed.**) |
 | `smoke_run_mpower.py` | Tiny end-to-end test to check nothing is broken. |
 
 ---

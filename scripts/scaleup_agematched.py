@@ -31,7 +31,7 @@ import torch
 
 from pdvoice.cohort import age_match_ids, cap_per_subject
 from pdvoice.calibration import select_best_by_brier
-from pdvoice.config import EMBEDDINGS, LOGS, MPOWER_DIR, VAL_FRACTION, ensure_dirs
+from pdvoice.config import MODELS, EMBEDDINGS, LOGS, MPOWER_DIR, VAL_FRACTION, ensure_dirs
 from pdvoice.data import LOADERS
 from pdvoice.data.splits import assign_folds, train_val_test_indices
 from pdvoice.eval.discrimination import auprc, auroc, bootstrap_ci
@@ -71,11 +71,16 @@ def block(y, p, thr):
                if k in ("sensitivity", "specificity", "balanced_accuracy", "f1")}}
 
 
-def run_seed(df, X, cap, seed, conv):
+def run_seed(df, X, cap, seed, conv, save_model=False):
     capped = cap_per_subject(df, cap, seed)
     keep = age_match_ids(capped, seed)
     am = capped[capped.subject_id.isin(keep)]
     idx = am.index.to_numpy()
+    # X rows line up with `df` rows, so `idx` must still index into `df`. If anything in
+    # the cohort chain resets the index, this pairs recordings with other people's
+    # embeddings -- silently, and the only symptom is chance performance.
+    assert np.array_equal(df.label.to_numpy()[idx], am.label.to_numpy()), \
+        "cohort index no longer aligns with the embedding matrix"
     Xa, y = X[idx], am.label.to_numpy()
     am = am.reset_index(drop=True)
 
@@ -106,6 +111,20 @@ def run_seed(df, X, cap, seed, conv):
     cal_name, cal = select_best_by_brier(vlog, y[va])
     thr = youden_threshold(y[va], cal.predict_proba(vlog))
     dev = next(head.parameters()).device
+
+    # Save the locked model from the FIRST seed as the project's reference artefact.
+    # (Was agematched_eval.py's job; that script is otherwise superseded by this one.)
+    if save_model:
+        import joblib
+
+        stem = f"agematched__{MODEL}__L{LAYER}"
+        MODELS.mkdir(parents=True, exist_ok=True)
+        torch.save(head.state_dict(), MODELS / f"{stem}__head.pt")
+        joblib.dump({"calibrator": cal, "threshold": float(thr), "layer": LAYER,
+                     "model": MODEL, "in_dim": int(Xa.shape[1]), "seed": seed,
+                     "n_subjects": int(am.subject_id.nunique())},
+                    MODELS / f"{stem}__calibrator.joblib")
+        print(f"  saved locked model -> {MODELS / (stem + '__head.pt')}", flush=True)
 
     transfer = {}
     for ds, task in EXTERNALS:
@@ -147,7 +166,7 @@ def main() -> None:
     conv, runs = [], []
     for s in seeds:
         print(f"[seed {s}] ...", flush=True)
-        r = run_seed(df, X, args.cap, s, conv)
+        r = run_seed(df, X, args.cap, s, conv, save_model=(s == seeds[0]))
         runs.append(r)
         w = r["within"]
         print(f"  cohort {r['n_subjects']:,} subj ({r['n_recordings']:,} recs), "
