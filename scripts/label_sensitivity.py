@@ -14,12 +14,14 @@ Run:  python scripts/label_sensitivity.py
 
 from __future__ import annotations
 
+import json
+
 import numpy as np
 import pandas as pd
 import torch
 
 from pdvoice.calibration import select_best_by_brier
-from pdvoice.config import EMBEDDINGS, MPOWER_DIR, SEED, VAL_FRACTION
+from pdvoice.config import EMBEDDINGS, LOGS, MPOWER_DIR, SEED, VAL_FRACTION
 from pdvoice.data import LOADERS
 from pdvoice.data.mpower import load_mpower
 from pdvoice.data.splits import assign_folds, train_val_test_indices
@@ -128,6 +130,7 @@ def main():
 
     print(f"\n{'scenario':<12}{'PD/HC subj':<16}{'within(last)':<14}"
           f"{'ipvs':<8}{'neurovoz':<10}{'mdvr_kcl':<10}")
+    results = {}
     for name, mask in masks(df).items():
         sub = df[mask].reset_index(drop=True)
         idx = df.index[mask].to_numpy()
@@ -141,10 +144,23 @@ def main():
         t = transfer_aurocs(sub, Xl15[idx], y, ext_cache)
         print(f"{name:<12}{f'{npd}/{nhc}':<16}{w:<14.3f}"
               f"{t['ipvs']:<8.3f}{t['neurovoz']:<10.3f}{t['mdvr_kcl']:<10.3f}")
+        results[name] = {"n_pd": int(npd), "n_hc": int(nhc),
+                         "within_last_layer": round(float(w), 4),
+                         "transfer_L15": {k: round(float(v), 4) for k, v in t.items()}}
 
     # report the age gap that motivates the age50 row
     print(f"\n  age: PD mean {df[df.label==1].age.mean():.1f}  HC mean {df[df.label==0].age.mean():.1f}")
     print("  (within = 5-fold subject-disjoint on mPower, last layer; externals = transfer at L15)")
+
+    # Persist, so downstream notebooks read a file instead of a transcribed number.
+    out = {"model": MODEL, "cap": CAP, "within_layer": str(WITHIN_LAYER),
+           "transfer_layer": TRANSFER_LAYER, "seed": SEED,
+           "age_pd": round(float(df[df.label == 1].age.mean()), 2),
+           "age_hc": round(float(df[df.label == 0].age.mean()), 2),
+           "scenarios": results}
+    LOGS.mkdir(parents=True, exist_ok=True)
+    (LOGS / "label_sensitivity.json").write_text(json.dumps(out, indent=2))
+    print(f"\nwrote {LOGS / 'label_sensitivity.json'}")
 
 
 if __name__ == "__main__":
