@@ -81,7 +81,7 @@ def cv_scores(X, y, groups, clf_name, seed, n_splits=5):
         else:
             c = sk(clf_name, seed).fit(X[tr], y[tr])
             oof[te] = c.predict_proba(X[te])[:, 1]
-    return bootstrap_ci(y, oof)
+    return bootstrap_ci(y, oof), oof
 
 
 def main() -> None:
@@ -122,13 +122,17 @@ def main() -> None:
     CLFS = ["logreg (linear probe)", "SVM (RBF)", "Random Forest", "HistGradBoost (~XGB)", "MLP head (ours)"]
     FEATSETS = [("SSL embeddings (2048)", X_ssl), (f"classical ({len(FEATS)})", X_cls), ("age only (1)", X_dem)]
 
-    rows = []
+    rows, preds = [], []
     for cohort, mask in [("confounded", np.ones(len(y), bool)), ("age-matched", m_am)]:
         for fname, Xf in FEATSETS:
             for c in CLFS:
                 if fname == "age only (1)" and c == "MLP head (ours)":
                     continue  # batch-norm on a single feature is degenerate
-                pt, lo, hi = cv_scores(Xf[mask], y[mask], None, c, args.seed)
+                (pt, lo, hi), oof = cv_scores(Xf[mask], y[mask], None, c, args.seed)
+                preds.append(pd.DataFrame({
+                    "cohort": cohort, "features": fname, "classifier": c,
+                    "subject_id": merged.subject_id.to_numpy()[mask],
+                    "y": y[mask], "p": oof}))
                 rows.append(dict(cohort=cohort, features=fname, classifier=c,
                                  AUROC=round(pt, 4), lo=round(lo, 4), hi=round(hi, 4)))
                 print(f"  [{cohort:<11}] {fname:<22} {c:<22} {pt:.3f} [{lo:.3f}, {hi:.3f}]", flush=True)
@@ -136,6 +140,9 @@ def main() -> None:
 
     R = pd.DataFrame(rows)
     R.to_csv(LOGS / "classifier_comparison.csv", index=False)
+    # per-subject predictions, so the objective function can be evaluated at any
+    # operating point without re-fitting anything
+    pd.concat(preds, ignore_index=True).to_csv(LOGS / "classifier_predictions.csv", index=False)
 
     pd.set_option("display.width", 200)
     for cohort in ("confounded", "age-matched"):
