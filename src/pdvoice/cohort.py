@@ -84,6 +84,55 @@ def age_match_ids(df: pd.DataFrame, seed: int = SEED,
     return set(keep)
 
 
+def attach_sex(df: pd.DataFrame) -> pd.DataFrame:
+    """Add a ``sex`` column ("Male"/"Female"/NaN) from the mPower Demographics Survey."""
+    demo = pd.read_csv(MPOWER_DIR / "Demographics Survey.csv")
+    g = dict(zip(demo["healthCode"].astype(str), demo["gender"]))
+    out = df.copy()
+    sex = out["subject_id"].str.replace("mpower_", "", regex=False).map(g)
+    out["sex"] = sex.where(sex.isin(["Male", "Female"]))
+    return out
+
+
+def demographic_match_ids(df: pd.DataFrame, on: tuple[str, ...] = ("age",),
+                          seed: int = SEED, bin_width: int = AGE_BIN_WIDTH) -> set[str]:
+    """Frequency-match PD and HC jointly across one or more attributes.
+
+    ``on=("age",)`` reproduces :func:`age_match_ids`. ``on=("age", "sex")`` matches within
+    each age-bin x sex cell, which matters because **the two confounds are independent**:
+    in mPower the patient group is 34.6% female against 18.6% of controls, and age matching
+    only narrows that to 33.7% vs 22.7% (chi-square p = 5.6e-05, still imbalanced). Sex
+    alone predicts the label at AUROC 0.58, and the embeddings encode sex at 0.97 -- so a
+    model has full access to it whether we intend that or not.
+
+    Matching on more attributes costs speakers, since every cell is capped at
+    min(n_PD, n_HC). That trade is the point: a smaller honest cohort beats a larger
+    confounded one.
+    """
+    d = df.copy()
+    strata = []
+    for col in on:
+        if col == "age":
+            d = d.dropna(subset=["age"])
+            d["_age_bin"] = (d["age"] // bin_width * bin_width).astype(int)
+            strata.append("_age_bin")
+        else:
+            d = d.dropna(subset=[col])
+            strata.append(col)
+    subj = d.drop_duplicates("subject_id")[["subject_id", "label", *strata]]
+
+    rng = np.random.default_rng(seed)
+    keep: list[str] = []
+    for _, g in subj.groupby(strata, sort=True):
+        pd_ids = np.sort(g.loc[g.label == 1, "subject_id"].to_numpy())
+        hc_ids = np.sort(g.loc[g.label == 0, "subject_id"].to_numpy())
+        k = min(len(pd_ids), len(hc_ids))
+        if k:
+            keep += rng.choice(pd_ids, k, replace=False).tolist()
+            keep += rng.choice(hc_ids, k, replace=False).tolist()
+    return set(keep)
+
+
 def age_match(df: pd.DataFrame, seed: int = SEED,
               bin_width: int = AGE_BIN_WIDTH) -> pd.DataFrame:
     """``age_match_ids`` applied — returns the matched rows, original order preserved."""
