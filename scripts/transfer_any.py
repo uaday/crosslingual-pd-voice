@@ -38,9 +38,29 @@ MODEL, CAP = "xls-r-300m", 3
 
 
 def embed(df, layer, cache_path):
+    """Cached embeddings, row-aligned to ``df``.
+
+    The cache stores the speaker ids alongside X and CHECKS them on load. It used to
+    store X alone and rely on the caller rebuilding the manifest in exactly the same
+    order (filter task, then apply QC, in that order). Row count alone does not catch a
+    reordering, so a stale or differently-built manifest silently paired recordings with
+    other people's embeddings -- which raises nothing and simply returns a plausible
+    wrong number. Older caches have no ids; those fall back to the length check with a
+    warning rather than being silently trusted.
+    """
     if cache_path.exists():
-        d = np.load(cache_path)
+        d = np.load(cache_path, allow_pickle=True)
         if d["X"].shape[0] == len(df):
+            if "subject_id" in d.files:
+                cached = d["subject_id"].astype(str)
+                if not np.array_equal(cached, df["subject_id"].to_numpy().astype(str)):
+                    raise SystemExit(
+                        f"{cache_path.name}: speaker ids do not match the manifest.\n"
+                        "The cohort was built differently from when this cache was written. "
+                        "Delete the cache and re-extract rather than trusting it.")
+            else:
+                print(f"      NOTE {cache_path.name} predates id-checking; "
+                      "verified on row count only")
             return d["X"].astype(np.float32)
     from tqdm import tqdm
 
@@ -60,7 +80,9 @@ def embed(df, layer, cache_path):
         vecs.append(v.astype(np.float16))
     X = np.vstack(vecs).astype(np.float16)
     cache_path.parent.mkdir(parents=True, exist_ok=True)
-    np.savez_compressed(cache_path, X=X)
+    np.savez_compressed(cache_path, X=X,
+                        subject_id=df["subject_id"].to_numpy().astype(str),
+                        path=df["path"].to_numpy().astype(str))
     return X.astype(np.float32)
 
 
