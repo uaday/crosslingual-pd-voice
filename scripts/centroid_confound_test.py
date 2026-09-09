@@ -42,7 +42,8 @@ import torch
 
 from pdvoice.calibration import select_best_by_brier
 from pdvoice.cohort import (age_match_ids, attach_sex, cap_per_subject,
-                            demographic_match_ids, load_mpower_cohort)
+                            demographic_match_ids, load_mpower_cohort,
+                            subject_age_stats)
 from pdvoice.config import EMBEDDINGS, LOGS, VAL_FRACTION
 from pdvoice.data import LOADERS
 from pdvoice.eval.discrimination import auroc
@@ -92,10 +93,20 @@ def main() -> None:
     seeds = [int(s) for s in args.seeds.split(",")]
 
     d = np.load(EMBEDDINGS / f"mpower_full__{MODEL}__L{LAYER}.npz", allow_pickle=True)
-    emb = pd.DataFrame({"subject_id": d["subject_id"].astype(str)})
+    emb = pd.DataFrame({"path": d["path"].astype(str)})
     emb["row"] = np.arange(len(emb))
     base = load_mpower_cohort(cap=3, seed=42)
-    base = base.merge(emb, on="subject_id", how="inner")
+    n_cohort = len(base)
+    base = base.merge(emb, on="path", how="inner")
+    # Join on PATH, which is unique on both sides. This used to join on subject_id --
+    # non-unique on BOTH frames, because the cohort is recording-level (<=3 rows per
+    # speaker) and the cache is recording-level and uncapped. That is a cartesian
+    # product per speaker: 12,053 cohort rows became 163,670, every one of the 55,480
+    # cached recordings entered (each ~3x, one speaker contributing 1,065 rows), and
+    # cap=3 was silently undone. It never raised; it returned a plausible number.
+    assert len(base) <= n_cohort, (
+        f"fan-out: {n_cohort:,} cohort rows became {len(base):,} after the join")
+    assert base.row.is_unique, "an embedding row was selected more than once"
 
     ext = {ds: load_external(ds, task) for ds, task in EXTERNALS}
 
@@ -114,8 +125,8 @@ def main() -> None:
             hc_mu = X[y == 0].mean(axis=0)          # source healthy-control centroid
             head, cal = train_locked(X, y, sub.subject_id.to_numpy(), seed)
 
-            age_pd = sub[sub.label == 1].age.mean()
-            age_hc = sub[sub.label == 0].age.mean()
+            _ages = subject_age_stats(sub)   # per speaker, not per recording
+            age_pd, age_hc = _ages["age_pd"], _ages["age_hc"]
 
             for ds, (edf, E) in ext.items():
                 plain = subject_auroc(edf, score(head, cal, E))

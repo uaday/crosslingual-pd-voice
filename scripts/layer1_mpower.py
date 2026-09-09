@@ -26,36 +26,34 @@ import numpy as np
 import pandas as pd
 
 from pdvoice.config import EMBEDDINGS, FIGURES, LOGS, SEED, ensure_dirs
-from pdvoice.data.mpower import load_mpower
+from pdvoice.cohort import load_mpower_cohort
 from pdvoice.data.splits import assign_folds, assert_disjoint, train_val_test_indices
-from pdvoice.preprocess import quality_control
 
 
 # ----------------------------------------------------------------------------- data
-def cap_per_subject(df: pd.DataFrame, cap: int, seed: int = SEED) -> pd.DataFrame:
-    """Keep up to `cap` labelled recordings per subject (seeded, subject-aware).
-
-    Shuffle-then-take-head-per-subject via cumcount — avoids groupby.apply, whose
-    grouping-column handling changed in pandas 3.0.
-    """
-    lab = df[df["label"].isin([0, 1])].sample(frac=1.0, random_state=seed)
-    rank = lab.groupby("subject_id").cumcount()
-    return lab[rank.to_numpy() < cap].reset_index(drop=True)
-
-
 # ------------------------------------------------------------------------ embeddings
 def extract_embeddings(df: pd.DataFrame, model_key: str, layer, seed: int, cap: int):
-    """Embed every row of df (order-aligned). Cached to a subset-specific npz."""
+    """Embed every row of df (order-aligned). Cached to a subset-specific npz.
+
+    A length check is NOT enough. The cohort's row ORDER and even its row SET can change
+    while the count stays put -- swapping the cap and QC steps keeps 12,053 rows but
+    exchanges 2,846 of them -- and X is consumed positionally, so a length-only guard
+    hands back embeddings paired with the wrong recordings. Compare the paths.
+    """
     from pdvoice.features.ssl import DEFAULT_MODELS, _embed_wave, load_encoder
     from pdvoice.preprocess import chunks, preprocess_clip
 
     cache = EMBEDDINGS / f"mpower_pilot__{model_key}__cap{cap}__L{layer}__seed{seed}.npz"
     if cache.exists():
-        d = np.load(cache)
-        if d["X"].shape[0] == len(df):
+        d = np.load(cache, allow_pickle=True)
+        if "path" not in d:
+            print("      cache predates the identity guard -> re-extracting")
+        elif list(d["path"].astype(str)) != df.path.tolist():
+            print("      cache does not match this cohort (order or membership)"
+                  " -> re-extracting")
+        else:
             print(f"      cache hit: {cache.name}  X={d['X'].shape}")
             return d["X"]
-        print("      cache size mismatch -> re-extracting")
 
     from tqdm import tqdm
 
@@ -75,7 +73,7 @@ def extract_embeddings(df: pd.DataFrame, model_key: str, layer, seed: int, cap: 
         vecs.append(v.astype(np.float16))
     X = np.vstack(vecs).astype(np.float16)
     cache.parent.mkdir(parents=True, exist_ok=True)
-    np.savez_compressed(cache, X=X)
+    np.savez_compressed(cache, X=X, path=df.path.to_numpy().astype(str))
     print(f"      done in {(time.time() - t0)/60:.1f} min -> cached {cache.name}")
     return X
 
@@ -199,8 +197,9 @@ def main() -> None:
     t0 = time.time()
     print(f"=== Layer 1 mPower pilot | model={args.model} cap={args.cap} ===")
 
-    print("[1/5] Load mPower + labels ...")
-    df = load_mpower()
+    print("[1/5] Load mPower + labels, QC, then cap ...")
+    # QC runs BEFORE the cap in load_mpower_cohort; this script used to do the reverse.
+    df = load_mpower_cohort(cap=args.cap, seed=SEED)
 
     if args.max_subjects:
         keep = (df[df.label.isin([0, 1])].groupby("label")["subject_id"]
@@ -208,13 +207,10 @@ def main() -> None:
         df = df[df["subject_id"].isin(set(keep))].copy()
         print(f"      [debug] limited to {df['subject_id'].nunique()} subjects")
 
-    print(f"[2/5] Cap {args.cap} rec/subject + QC ...")
-    df = cap_per_subject(df, args.cap)
-    df, dropped = quality_control(df)
-    df = df.reset_index(drop=True)
+    print(f"[2/5] Cohort at cap {args.cap} (QC already applied) ...")
     print(f"      {len(df):,} recordings across {df['subject_id'].nunique():,} subjects "
           f"(PD subj={df[df.label==1].subject_id.nunique():,}  "
-          f"HC subj={df[df.label==0].subject_id.nunique():,}; dropped {len(dropped)})")
+          f"HC subj={df[df.label==0].subject_id.nunique():,})")
 
     print("[3/5] Extract frozen embeddings ...")
     X = extract_embeddings(df, args.model, args.layer, SEED, args.cap)

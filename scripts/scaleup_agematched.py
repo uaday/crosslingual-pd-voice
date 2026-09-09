@@ -29,7 +29,7 @@ import numpy as np
 import pandas as pd
 import torch
 
-from pdvoice.cohort import age_match_ids, cap_per_subject
+from pdvoice.cohort import age_match_ids, cap_per_subject, subject_age_stats
 from pdvoice.calibration import select_best_by_brier
 from pdvoice.config import MODELS, EMBEDDINGS, LOGS, MPOWER_DIR, VAL_FRACTION, ensure_dirs
 from pdvoice.data import LOADERS
@@ -141,8 +141,8 @@ def run_seed(df, X, cap, seed, conv, save_model=False):
 
     return {"seed": seed, "n_subjects": int(am.subject_id.nunique()),
             "n_recordings": int(len(am)),
-            "age_pd": round(float(am[am.label == 1].age.mean()), 1),
-            "age_hc": round(float(am[am.label == 0].age.mean()), 1),
+            **{k: subject_age_stats(am)[k]        # per speaker, not per recording
+               for k in ("age_pd", "age_hc", "age_gap", "age_level")},
             "calibrator": cal_name, "threshold": round(float(thr), 4),
             "within": within, "transfer": transfer}
 
