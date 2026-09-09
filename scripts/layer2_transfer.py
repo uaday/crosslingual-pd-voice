@@ -27,21 +27,42 @@ from sklearn.model_selection import GroupShuffleSplit
 
 from pdvoice.config import EMBEDDINGS, FIGURES, LOGS, SEED, VAL_FRACTION, ensure_dirs
 from pdvoice.data import LOADERS
-from pdvoice.data.mpower import load_mpower
+from pdvoice.cohort import load_mpower_cohort
 from pdvoice.preprocess import quality_control
 
-MPOWER_INTERNAL_AUROC = 0.839  # Layer-1 CV ceiling (XLS-R last layer, cap 3), for drop calc
+def _mpower_ceiling(model: str = "xls-r-300m", cap: int = 3) -> float:
+    """Layer-1 within-mPower AUROC, read from disk rather than pasted in.
+
+    This was hardcoded at 0.839 and went stale when the cohort was corrected (the
+    phantom-row fix took it to 0.827), overstating every transfer drop this script
+    reports by 0.012. Read it so it cannot silently rot again.
+    """
+    import json as _json
+    f = LOGS / f"layer1_mpower__{model}__cap{cap}__LNone.json"
+    if not f.exists():
+        raise SystemExit(f"missing {f}\nRun: scripts/layer1_mpower.py --model {model} --cap {cap}")
+    return float(_json.loads(f.read_text())["auroc"])
 
 
 # ------------------------------------------------------------------ embedding (cached)
 def embed(df: pd.DataFrame, model_key: str, layer, cache_path: Path) -> np.ndarray:
-    """Order-aligned pooled embeddings for df, cached to cache_path (key 'X')."""
+    """Order-aligned pooled embeddings for df, cached to cache_path (keys 'X', 'path').
+
+    A length check is NOT enough. The cohort's row ORDER and even its row SET can change
+    while the count stays put -- swapping the cap and QC steps keeps 12,053 rows but
+    exchanges 2,846 of them -- and X is consumed positionally, so a length-only guard
+    hands back embeddings paired with the wrong recordings. Compare the paths.
+    """
     if cache_path.exists():
-        d = np.load(cache_path)
-        if d["X"].shape[0] == len(df):
+        d = np.load(cache_path, allow_pickle=True)
+        if "path" not in d:
+            print("      cache predates the identity guard -> re-extracting")
+        elif list(d["path"].astype(str)) != df.path.tolist():
+            print("      cache does not match this cohort (order or membership)"
+                  " -> re-extracting")
+        else:
             print(f"      cache hit: {cache_path.name}  X={d['X'].shape}")
             return d["X"]
-        print("      cache size mismatch -> re-extracting")
 
     from tqdm import tqdm
 
@@ -61,13 +82,8 @@ def embed(df: pd.DataFrame, model_key: str, layer, cache_path: Path) -> np.ndarr
         vecs.append(v.astype(np.float16))
     X = np.vstack(vecs).astype(np.float16)
     cache_path.parent.mkdir(parents=True, exist_ok=True)
-    np.savez_compressed(cache_path, X=X)
+    np.savez_compressed(cache_path, X=X, path=df.path.to_numpy().astype(str))
     return X
-
-
-def cap_per_subject(df, cap, seed=SEED):
-    lab = df[df["label"].isin([0, 1])].sample(frac=1.0, random_state=seed)
-    return lab[lab.groupby("subject_id").cumcount().to_numpy() < cap].reset_index(drop=True)
 
 
 def subject_level(oof):
@@ -111,6 +127,7 @@ def main() -> None:
     ensure_dirs()
     t0 = time.time()
     print(f"=== Layer 2 transfer | encoder={args.model} L{args.layer} | task={args.task} ===")
+    ceiling = _mpower_ceiling(args.model, args.cap)
     import torch
 
     from pdvoice.calibration import select_best_by_brier
@@ -119,10 +136,8 @@ def main() -> None:
 
     # ---- 1. mPower training embeddings (reuse Layer-1 cache) ----
     print("[1] mPower train set ...")
-    mp = load_mpower()
-    mp = cap_per_subject(mp, args.cap)
-    mp, _ = quality_control(mp)
-    mp = mp.reset_index(drop=True)
+    # QC runs BEFORE the cap in here; this script used to do the reverse.
+    mp = load_mpower_cohort(cap=args.cap, seed=SEED)
     mp_cache = EMBEDDINGS / f"mpower_pilot__{args.model}__cap{args.cap}__L{args.layer}__seed{SEED}.npz"
     Xmp = embed(mp, args.model, args.layer, mp_cache)
     ymp = mp["label"].astype(int).to_numpy()
@@ -147,7 +162,7 @@ def main() -> None:
         subj = subject_level(pd.DataFrame(
             {"subject_id": df["subject_id"], "y": df["label"].astype(int), "p": p}))
         m = evaluate(subj["y"].to_numpy(), subj["p"].to_numpy(), thr)
-        m["transfer_drop_auroc"] = round(MPOWER_INTERNAL_AUROC - m["auroc"], 3)
+        m["transfer_drop_auroc"] = round(ceiling - m["auroc"], 3)
         return subj, m
 
     # source healthy-voice statistics (mPower HC recordings), for domain adaptation
@@ -203,7 +218,7 @@ def main() -> None:
     # ---- 4. summary ----
     adapted = args.adapt != "none"
     print("\n===================== LAYER-2 TRANSFER =====================")
-    print(f"  mPower internal ceiling (Layer-1 CV): AUROC {MPOWER_INTERNAL_AUROC:.3f}")
+    print(f"  mPower internal ceiling (Layer-1 CV, from disk): AUROC {ceiling:.3f}")
     if adapted:
         print(f"  adaptation: {args.adapt}  (align target HC stats -> source HC stats)")
         print(f"  {'dataset':<11}{'lang':<5}{'subj':<6}{'AUROC before':<14}{'AUROC after':<14}{'delta':<8}{'ECE b->a'}")

@@ -12,6 +12,7 @@ Everything that builds a cohort now imports from here.
     cap_per_subject()     ->  at most N recordings per speaker (seeded)
     age_match_ids()       ->  frequency-match PD/HC age per bin, ORDER-INDEPENDENT
     subject_level()       ->  average recording probabilities to one row per speaker
+    subject_age_stats()   ->  PD/HC mean age and gap, ONE row per speaker
 """
 
 from __future__ import annotations
@@ -172,6 +173,27 @@ def describe_cohort(df: pd.DataFrame) -> str:
     apd, ahc = s.loc[s.label == 1, "age"].mean(), s.loc[s.label == 0, "age"].mean()
     return (f"{len(df):,} recordings / {len(s):,} speakers "
             f"(PD {npd:,} age {apd:.1f} | HC {nhc:,} age {ahc:.1f} | gap {apd - ahc:+.1f} yr)")
+
+
+def subject_age_stats(df: pd.DataFrame) -> dict:
+    """PD/HC mean age and the gap, computed on ONE row per speaker.
+
+    Demographics need deduplicating for the same reason metrics do (see
+    ``subject_level``): recording counts are wildly uneven and not class-neutral.
+    Averaging ``age`` over a recording-level frame silently weights each speaker by
+    how much they recorded. On the full mPower cache that is not a rounding error --
+    the top 1% of speakers hold 24% of the rows (one has 355), and the recording-level
+    mean reports a PD/HC age gap of 23.6 years where the gap between speakers is 27.5.
+
+    Capping hides the problem rather than fixing it: at cap-3 the two agree to 0.3 yr,
+    so a wrong number here looks right until someone runs it uncapped.
+    """
+    s = df.drop_duplicates("subject_id")
+    apd = float(s.loc[s.label == 1, "age"].mean())
+    ahc = float(s.loc[s.label == 0, "age"].mean())
+    return {"age_pd": round(apd, 2), "age_hc": round(ahc, 2),
+            "age_gap": round(apd - ahc, 2), "age_level": "subject",
+            "n_pd": int((s.label == 1).sum()), "n_hc": int((s.label == 0).sum())}
 
 
 def subject_level(subject_ids, y, p) -> pd.DataFrame:

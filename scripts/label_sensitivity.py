@@ -41,7 +41,7 @@ import pandas as pd
 import torch
 
 from pdvoice.calibration import select_best_by_brier
-from pdvoice.cohort import age_match_ids, cap_per_subject
+from pdvoice.cohort import age_match_ids, cap_per_subject, subject_age_stats
 from pdvoice.config import EMBEDDINGS, LOGS, MPOWER_DIR, VAL_FRACTION
 from pdvoice.data import LOADERS
 from pdvoice.data.splits import assign_folds, train_val_test_indices
@@ -148,8 +148,9 @@ def main() -> None:
     print(f"=== mPower label vs age sensitivity | {len(seeds)} seeds ===")
     print(f"  pool {len(df):,} recordings / {df.subject_id.nunique():,} speakers")
     print(f"  within = layer {WITHIN_LAYER} (last) · transfer = L{TRANSFER_LAYER} · cap-{CAP}")
-    print(f"  age: PD {df[df.label==1].age.mean():.1f}  HC {df[df.label==0].age.mean():.1f}"
-          f"  gap {df[df.label==1].age.mean()-df[df.label==0].age.mean():+.1f} yr\n")
+    ages = subject_age_stats(df)   # df is one row per RECORDING, and uncapped here
+    print(f"  age (per speaker): PD {ages['age_pd']:.1f}  HC {ages['age_hc']:.1f}"
+          f"  gap {ages['age_gap']:+.1f} yr\n")
 
     runs = {}
     for seed in seeds:
@@ -202,8 +203,8 @@ def main() -> None:
     LOGS.mkdir(parents=True, exist_ok=True)
     out = {"model": MODEL, "cap": CAP, "within_layer": WITHIN_LAYER,
            "transfer_layer": TRANSFER_LAYER, "seeds": seeds,
-           "age_pd": round(float(df[df.label == 1].age.mean()), 2),
-           "age_hc": round(float(df[df.label == 0].age.mean()), 2),
+           "age_pd": ages["age_pd"], "age_hc": ages["age_hc"],
+           "age_gap": ages["age_gap"], "age_level": ages["age_level"],
            "runs": runs, "summary": rows}
     (LOGS / "label_sensitivity.json").write_text(json.dumps(out, indent=2))
     print(f"\nwrote {LOGS / 'label_sensitivity.json'}")

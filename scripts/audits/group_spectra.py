@@ -33,7 +33,7 @@ import pandas as pd
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 
-from pdvoice.cohort import age_match_ids
+from pdvoice.cohort import age_match_ids, subject_age_stats
 from pdvoice.config import FIGURES, LOGS, MPOWER_DIR, SAMPLE_RATE  # noqa: E402
 from pdvoice.data.mpower import load_mpower  # noqa: E402
 from pdvoice.data.neurovoz import load_neurovoz  # noqa: E402
@@ -127,8 +127,9 @@ def main() -> None:
     mp_am = mp[mp.subject_id.isin(keep)]
     print(f"mPower raw       : {subj.subject_id.nunique():,} subjects "
           f"(PD age {subj[subj.label==1].age.mean():.1f}, HC age {subj[subj.label==0].age.mean():.1f})")
+    _am = subject_age_stats(mp_am)   # mp_am is recording-level; subj above is not
     print(f"mPower age-match : {mp_am.subject_id.nunique():,} subjects "
-          f"(PD age {mp_am[mp_am.label==1].age.mean():.1f}, HC age {mp_am[mp_am.label==0].age.mean():.1f})")
+          f"(PD age {_am['age_pd']:.1f}, HC age {_am['age_hc']:.1f})")
 
     print("  [raw cohort] computing LTAS ...", flush=True)
     res_raw = collect(mp, args.per_group, args.seed)

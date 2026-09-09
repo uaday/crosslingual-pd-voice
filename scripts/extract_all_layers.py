@@ -26,7 +26,7 @@ import warnings
 
 import numpy as np
 
-from pdvoice.cohort import age_match_ids, load_mpower_cohort
+from pdvoice.cohort import age_match_ids, load_mpower_cohort, subject_age_stats
 from pdvoice.config import EMBEDDINGS, SAMPLE_RATE
 from pdvoice.preprocess import preprocess_clip
 
@@ -103,7 +103,9 @@ def main() -> None:
     df = build_cohort(args.seed)
     print(f"cohort: {len(df):,} recordings / {df.subject_id.nunique():,} speakers "
           f"(PD {int((df.label == 1).sum()):,} / HC {int((df.label == 0).sum()):,})")
-    print(f"        age PD {df[df.label == 1].age.mean():.1f} / HC {df[df.label == 0].age.mean():.1f}")
+    _a = subject_age_stats(df)   # per speaker, not per recording
+    print(f"        age PD {_a['age_pd']:.1f} / HC {_a['age_hc']:.1f} "
+          f"(gap {_a['age_gap']:+.1f} yr)")
 
     model, extractor, device = load_model(args.model)
     is_whisper = args.model.startswith("whisper")
