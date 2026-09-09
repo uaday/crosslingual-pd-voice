@@ -1,0 +1,9 @@
+claim,task,published,published_sd,source,our_key,comparability,note
+NeuroVoz connected speech (within),speech,0.933,0.017,VoiceFM,transferany:train-neurovoz-speech:within,same,Same corpus and task; both subject-level.
+NeuroVoz sustained vowel (within),vowel,0.646,0.033,VoiceFM,transferany:train-neurovoz-vowel:within,caveat,"Same corpus and task, but NeuroVoz vowel task codes leak the label (metadata-only AUROC 0.895), so neither number is confound-free."
+IPVS connected speech (within),speech,0.99,,Klempir 2024,transferany:train-ipvs-speech:within,ceiling,"Both are at ceiling. IPVS is small (n=50) and its 44.1 kHz batch is PD-only; report as reproduced, not as a result."
+MDVR-KCL connected speech (within),speech,0.80,,Klempir 2024,transferany:train-mdvr_kcl-speech:within,same,Same corpus and task; n=37 so the CI is wide.
+English -> Italian (speech),speech,0.90,,Klempir 2024,transferany:train-mdvr_kcl-speech:transfer:ipvs:speech,same,"Klempir reports 0.90 and 0.98 for two configurations; the lower is used here."
+Italian -> English (speech),speech,0.72,,Klempir 2024,transferany:train-ipvs-speech:transfer:mdvr_kcl:speech,same,"Klempir reports 0.72 and 0.78; the lower is used here."
+mPower participant-level (no age curation),vowel,0.87,,VoiceFM,labelsens:baseline:within,same,"Both subject-level on the uncorrected cohort. Ours is 5 seeds; theirs is a single figure."
+mPower recording-level split,vowel,0.94,,"Study cited by VoiceFM",labelsens:baseline:within,NOT comparable,"Their split is RECORDING level, so the same speaker appears in train and test. Age restricted to 50-70 rather than matched (3.5 yr gap remains) and an 18-point sex gap left uncontrolled. n=398 recordings. Listed to be criticised, not matched."
