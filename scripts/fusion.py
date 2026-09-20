@@ -34,7 +34,9 @@ import torch
 from pdvoice.cohort import age_match_ids, load_mpower_cohort
 from pdvoice.config import EMBEDDINGS, LOGS, SEED
 from pdvoice.data.splits import assign_folds, train_val_test_indices
-from pdvoice.eval.discrimination import auprc, auroc, bootstrap_ci
+from pdvoice.eval.discrimination import (auprc, auroc, bootstrap_ci,
+                                         delong_roc_test,
+                                         paired_bootstrap_auroc)
 from pdvoice.features.classical import FEATURE_NAMES
 from pdvoice.models.head import fit_mlp_head
 
@@ -84,6 +86,33 @@ def within_cv(df, X, y):
     return a, lo, hi, auprc(yy, pp), g
 
 
+def pairwise_tests(preds):
+    """Paired significance tests between every pair of feature sets.
+
+    JOIN ON subject_id, never on row order. The three frames come from separate
+    groupby operations and are only guaranteed to contain the same subjects, not to
+    list them in the same order -- and a silent misalignment here would produce a
+    confident p-value for a comparison that was never made.
+    """
+    out = {}
+    names = list(preds)
+    for i, a in enumerate(names):
+        for b in names[i + 1:]:
+            m = preds[a].merge(preds[b], on="s", suffixes=("_a", "_b"))
+            assert len(m) == len(preds[a]) == len(preds[b]), \
+                f"{a} vs {b}: subject sets differ ({len(m)} matched)"
+            assert (m.y_a == m.y_b).all(), f"{a} vs {b}: labels disagree after the join"
+            y = m.y_a.to_numpy()
+            pa, pb = m.p_a.to_numpy(), m.p_b.to_numpy()
+            _, _, p_delong = delong_roc_test(y, pa, pb)
+            delta, p_boot = paired_bootstrap_auroc(y, pa, pb)
+            out[f"{a} vs {b}"] = {"delta": round(float(delta), 4),
+                                  "p_delong": round(float(p_delong), 4),
+                                  "p_bootstrap": round(float(p_boot), 4),
+                                  "n_subjects": int(len(m))}
+    return out
+
+
 def main():
     print("=== Fusion: SSL + classical (mPower vowel, cap-1, XLS-R L15) ===")
     df, S = build_cohort()
@@ -106,12 +135,21 @@ def main():
                  "age-matched": df.subject_id.isin(age_match_ids(df)).to_numpy()}
     for scen, mask in scenarios.items():
         results["scenarios"][scen] = {}
+        preds = {}
         for name, X in sets.items():
             a, lo, hi, ap, g = within_cv(df[mask].reset_index(drop=True), X[mask], y[mask])
             results["scenarios"][scen][name] = {"auroc": a, "auroc_ci": [lo, hi], "auprc": ap}
             g.to_csv(LOGS / f"fusion_preds__{scen}__{name.replace('-', '_')}.csv", index=False)
+            preds[name] = g
             star = "  <<<" if name == "FUSION" else ""
             print(f"  {scen:<13}{name:<16}{a:.3f} [{lo:.3f},{hi:.3f}]      {ap:.3f}{star}")
+
+        results["scenarios"][scen]["_tests"] = pairwise_tests(preds)
+        print(f"  {'':<13}{'pair':<34}{'delta':>8}{'DeLong p':>11}{'boot p':>9}")
+        for key, t in results["scenarios"][scen]["_tests"].items():
+            verdict = "" if t["p_delong"] < 0.05 else "   not distinguishable"
+            print(f"  {'':<13}{key:<34}{t['delta']:+8.4f}{t['p_delong']:>11.3f}"
+                  f"{t['p_bootstrap']:>9.3f}{verdict}")
         print()
 
     (LOGS / "fusion__xls-r-300m__L15.json").write_text(json.dumps(results, indent=2))
