@@ -1,0 +1,70 @@
+%% FINDINGS DIAGRAM — the argument in one picture
+%% Excalidraw:  menu -> "Mermaid to Excalidraw" -> paste -> Insert
+
+flowchart TD
+
+    Q["A voice model on mPower
+    scores 0.80.
+    Is that real?"]
+
+    T1["TEST 1
+    age alone, no audio at all"]
+    R1["0.922
+    one feature beats
+    315 million parameters"]
+
+    T2["TEST 2
+    two rival explanations,
+    opposite predictions"]
+    R2a["clean the labels
+    within +0.011
+    transfer +0.010
+    = nothing"]
+    R2b["match the ages
+    within -0.185
+    transfer +0.124
+    = a confound"]
+
+    T3["TEST 3
+    compare models with
+    and without the confound"]
+    R3a["CONFOUNDED cohort
+    classical vs SSL  p = 0.001
+    SSL vs fusion     p = 0.000
+    all differences REAL"]
+    R3b["AGE-MATCHED cohort
+    classical vs SSL  p = 0.718
+    SSL vs fusion     p = 0.876
+    all differences GONE"]
+
+    T4["TEST 4
+    change the task instead
+    of the model"]
+    R4["connected speech
+    0.70 - 0.85 in all directions
+    across 3 languages
+    and it survives age matching"]
+
+    T5["TEST 5
+    what is worth clinically?"]
+    R5["+1.3 extra cases
+    per 1,000 screened
+    vs screening everyone"]
+
+    CONC["CONCLUSION
+    Model choice is not a lever.
+    Study design and task choice are."]
+
+    Q --> T1 --> R1
+    Q --> T2
+    T2 --> R2a
+    T2 --> R2b
+    R1 --> T3
+    R2b --> T3
+    T3 --> R3a
+    T3 --> R3b
+    R3b --> T4 --> R4
+    R4 --> T5 --> R5
+    R3b --> CONC
+    R4 --> CONC
+    R5 --> CONC
