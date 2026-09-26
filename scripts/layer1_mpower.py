@@ -28,11 +28,13 @@ import pandas as pd
 from pdvoice.config import EMBEDDINGS, FIGURES, LOGS, SEED, ensure_dirs
 from pdvoice.cohort import load_mpower_cohort
 from pdvoice.data.splits import assign_folds, assert_disjoint, train_val_test_indices
+from pdvoice.preprocess import WINDOW_MODES
 
 
 # ----------------------------------------------------------------------------- data
 # ------------------------------------------------------------------------ embeddings
-def extract_embeddings(df: pd.DataFrame, model_key: str, layer, seed: int, cap: int):
+def extract_embeddings(df: pd.DataFrame, model_key: str, layer, seed: int, cap: int,
+                       window: str = "current"):
     """Embed every row of df (order-aligned). Cached to a subset-specific npz.
 
     A length check is NOT enough. The cohort's row ORDER and even its row SET can change
@@ -43,7 +45,8 @@ def extract_embeddings(df: pd.DataFrame, model_key: str, layer, seed: int, cap: 
     from pdvoice.features.ssl import DEFAULT_MODELS, _embed_wave, load_encoder
     from pdvoice.preprocess import chunks, preprocess_clip
 
-    cache = EMBEDDINGS / f"mpower_pilot__{model_key}__cap{cap}__L{layer}__seed{seed}.npz"
+    wtag = "" if window == "current" else f"__W{window}"
+    cache = EMBEDDINGS / f"mpower_pilot__{model_key}__cap{cap}__L{layer}__seed{seed}{wtag}.npz"
     if cache.exists():
         d = np.load(cache, allow_pickle=True)
         if "path" not in d:
@@ -54,6 +57,21 @@ def extract_embeddings(df: pd.DataFrame, model_key: str, layer, seed: int, cap: 
         else:
             print(f"      cache hit: {cache.name}  X={d['X'].shape}")
             return d["X"]
+
+    # The extraction below hardcodes preprocess_clip + chunks, i.e. the "current"
+    # windowing. Under any other --window a cache miss would therefore write
+    # current-windowed embeddings under a __W<mode> filename -- a wrong number that looks
+    # like a right one, and that every later run would then cache-hit on. Refuse instead.
+    if window != "current":
+        raise SystemExit("\n".join([
+            f"no cache for window={window!r} at {cache.name}.",
+            "This script's own extraction path only implements the 'current' windowing.",
+            "Build it first:",
+            f"  scripts/extract_windows.py --dataset mpower --task vowel --cap {cap} "
+            f"--window {window}",
+            f"  scripts/slice_windows.py   --dataset mpower --task vowel --cap {cap} "
+            f"--window {window} --layers {layer}",
+        ]))
 
     from tqdm import tqdm
 
@@ -188,6 +206,11 @@ def main() -> None:
     ap.add_argument("--cap", type=int, default=3, help="max labelled recordings/subject")
     ap.add_argument("--model", default="wav2vec2-base")
     ap.add_argument("--layer", type=int, default=None)
+    # The 2 s vowel core was an inherited default, never compared against anything.
+    # "current" keeps it and reads the legacy caches unchanged, so existing numbers
+    # reproduce; other modes read caches built by scripts/extract_windows.py.
+    ap.add_argument("--window", default="current", choices=list(WINDOW_MODES),
+                    help="windowing mode; see pdvoice.preprocess.window_clip")
     ap.add_argument("--folds", type=int, default=5)
     ap.add_argument("--max-subjects", type=int, default=None,
                     help="debug: keep only this many subjects per class (fast dry-run)")
@@ -213,16 +236,18 @@ def main() -> None:
           f"HC subj={df[df.label==0].subject_id.nunique():,})")
 
     print("[3/5] Extract frozen embeddings ...")
-    X = extract_embeddings(df, args.model, args.layer, SEED, args.cap)
+    X = extract_embeddings(df, args.model, args.layer, SEED, args.cap, args.window)
 
     print(f"[4/5] {args.folds}-fold subject-disjoint CV + calibration ...")
     oof = run_cv(df, X, args.folds)
-    outstem = f"layer1_mpower__{args.model}__cap{args.cap}__L{args.layer}"
+    wtag = "" if args.window == "current" else f"__W{args.window}"
+    outstem = f"layer1_mpower__{args.model}__cap{args.cap}__L{args.layer}{wtag}"
     oof.to_csv(LOGS / f"{outstem}__oof_preds.csv", index=False)
 
     print("[5/5] Subject-level evaluation ...")
     metrics = evaluate_subject_level(oof, outstem, args.model)
     metrics["layer"] = args.layer
+    metrics["window"] = args.window
 
     LOGS.mkdir(parents=True, exist_ok=True)
     (LOGS / f"{outstem}.json").write_text(json.dumps(metrics, indent=2))
