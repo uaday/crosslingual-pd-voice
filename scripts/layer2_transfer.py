@@ -192,7 +192,8 @@ def main() -> None:
     thr = youden_threshold(ymp[va], cal.predict_proba(val_logits))
     dev = next(model.parameters()).device
     print(f"      calibrator={cal_name}  locked threshold={thr:.3f}  "
-          f"(train={len(tr)} val={len(va)} subjects)")
+          f"(train={len(tr)} val={len(va)} recordings; "
+          f"{mp.subject_id.iloc[tr].nunique()}/{mp.subject_id.iloc[va].nunique()} subjects)")
 
     def score(X):
         with torch.no_grad():
