@@ -28,7 +28,7 @@ from sklearn.model_selection import GroupShuffleSplit
 from pdvoice.config import EMBEDDINGS, FIGURES, LOGS, SEED, VAL_FRACTION, ensure_dirs
 from pdvoice.data import LOADERS
 from pdvoice.cohort import load_mpower_cohort
-from pdvoice.preprocess import quality_control
+from pdvoice.preprocess import WINDOW_MODES, quality_control
 
 def _mpower_ceiling(model: str = "xls-r-300m", cap: int = 3) -> float:
     """Layer-1 within-mPower AUROC, read from disk rather than pasted in.
@@ -45,7 +45,8 @@ def _mpower_ceiling(model: str = "xls-r-300m", cap: int = 3) -> float:
 
 
 # ------------------------------------------------------------------ embedding (cached)
-def embed(df: pd.DataFrame, model_key: str, layer, cache_path: Path) -> np.ndarray:
+def embed(df: pd.DataFrame, model_key: str, layer, cache_path: Path,
+          window: str = "current") -> np.ndarray:
     """Order-aligned pooled embeddings for df, cached to cache_path (keys 'X', 'path').
 
     A length check is NOT enough. The cohort's row ORDER and even its row SET can change
@@ -63,6 +64,17 @@ def embed(df: pd.DataFrame, model_key: str, layer, cache_path: Path) -> np.ndarr
         else:
             print(f"      cache hit: {cache_path.name}  X={d['X'].shape}")
             return d["X"]
+
+    if window != "current":
+        raise SystemExit("\n".join([
+            f"no cache for window={window!r} at {cache_path.name}.",
+            "This script's own extraction path only implements the 'current' windowing,",
+            "so it CANNOT build this cache -- it would silently write current-windowed",
+            "embeddings under a non-current filename. Build it first:",
+            f"  scripts/extract_windows.py --dataset <ds> --task <task> --window {window}",
+            f"  scripts/slice_windows.py   --dataset <ds> --task <task> --window {window}"
+            f" --layers {layer}",
+        ]))
 
     from tqdm import tqdm
 
@@ -117,6 +129,11 @@ def main() -> None:
     ap.add_argument("--cap", type=int, default=3, help="mPower recordings/subject for training")
     ap.add_argument("--externals", default="ipvs,neurovoz")
     ap.add_argument("--task", default="vowel", help="external task_kind subset to test")
+    # The 2 s vowel core and the 5 s speech chunk were inherited defaults, never measured.
+    # "current" keeps them and reads the legacy caches unchanged, so every existing number
+    # is reproducible; the other modes read caches built by scripts/extract_windows.py.
+    ap.add_argument("--window", default="current", choices=list(WINDOW_MODES),
+                    help="windowing mode; see pdvoice.preprocess.window_clip")
     ap.add_argument("--adapt", choices=["none", "hc-centroid", "hc-standardize"], default="none",
                     help="hc-centroid: shift target embeddings by (mu_source_HC - mu_target_HC) "
                          "(mean alignment). hc-standardize: align mean AND per-feature scale using "
@@ -138,8 +155,10 @@ def main() -> None:
     print("[1] mPower train set ...")
     # QC runs BEFORE the cap in here; this script used to do the reverse.
     mp = load_mpower_cohort(cap=args.cap, seed=SEED)
-    mp_cache = EMBEDDINGS / f"mpower_pilot__{args.model}__cap{args.cap}__L{args.layer}__seed{SEED}.npz"
-    Xmp = embed(mp, args.model, args.layer, mp_cache)
+    wtag = "" if args.window == "current" else f"__W{args.window}"
+    mp_cache = EMBEDDINGS / (f"mpower_pilot__{args.model}__cap{args.cap}"
+                             f"__L{args.layer}__seed{SEED}{wtag}.npz")
+    Xmp = embed(mp, args.model, args.layer, mp_cache, args.window)
     ymp = mp["label"].astype(int).to_numpy()
 
     # ---- 2. subject-disjoint train/val, fit head, LOCK calibration + threshold ----
@@ -181,10 +200,10 @@ def main() -> None:
             continue
         df, _ = quality_control(df)
         df = df.reset_index(drop=True)
-        cache = EMBEDDINGS / f"{ds}__{args.model}__{args.task}__L{args.layer}.npz"
-        X = embed(df, args.model, args.layer, cache)
+        cache = EMBEDDINGS / f"{ds}__{args.model}__{args.task}__L{args.layer}{wtag}.npz"
+        X = embed(df, args.model, args.layer, cache, args.window)
         y_rec = df["label"].astype(int).to_numpy()
-        stem = f"layer2__{args.model}__{ds}__{args.task}__L{args.layer}"
+        stem = f"layer2__{args.model}__{ds}__{args.task}__L{args.layer}{wtag}"
 
         subj_b, m_b = eval_probs(df, score(X))
         m_b["dataset"] = ds
