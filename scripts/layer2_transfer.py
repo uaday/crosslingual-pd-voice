@@ -30,7 +30,8 @@ from pdvoice.data import LOADERS
 from pdvoice.cohort import load_mpower_cohort
 from pdvoice.preprocess import WINDOW_MODES, quality_control
 
-def _mpower_ceiling(model: str = "xls-r-300m", cap: int = 3) -> float:
+def _mpower_ceiling(model: str = "xls-r-300m", cap: int = 3, layer=None,
+                    window: str = "current") -> float:
     """Layer-1 within-mPower AUROC, read from disk rather than pasted in.
 
     This was hardcoded at 0.839 and went stale when the cohort was corrected (the
@@ -38,9 +39,30 @@ def _mpower_ceiling(model: str = "xls-r-300m", cap: int = 3) -> float:
     reports by 0.012. Read it so it cannot silently rot again.
     """
     import json as _json
-    f = LOGS / f"layer1_mpower__{model}__cap{cap}__LNone.json"
+
+    # The ceiling must come from the SAME layer being transferred, or the drop is an
+    # apples-to-oranges subtraction. This used to read LNone unconditionally, which was
+    # harmless while only the last layer was ever used and silently wrong the moment a
+    # layer sweep started: a transfer at L11 was being scored against the last layer's
+    # within-mPower number. Prefer the matching layer; fall back loudly, never quietly.
+    # The WINDOW must match too, and this one never falls back across modes: a 2 s vowel
+    # core and a full 10 s recording are different inputs, so subtracting one's ceiling
+    # from the other's transfer would repeat exactly the mistake above in a second
+    # dimension. Only the layer is allowed to degrade, and only with a warning.
+    wtag = "" if window == "current" else f"__W{window}"
+    f = LOGS / f"layer1_mpower__{model}__cap{cap}__L{layer}{wtag}.json"
     if not f.exists():
-        raise SystemExit(f"missing {f}\nRun: scripts/layer1_mpower.py --model {model} --cap {cap}")
+        alt = LOGS / f"layer1_mpower__{model}__cap{cap}__LNone{wtag}.json"
+        if not alt.exists():
+            raise SystemExit(f"missing {f}\nRun: scripts/layer1_mpower.py --model {model} "
+                             f"--cap {cap} --layer {layer} --window {window}")
+        print(f"      WARNING: no within-mPower ceiling for L{layer} (window={window}); "
+              f"falling back to the last-layer ceiling.\n"
+              f"      'transfer_drop_auroc' below is measured against a DIFFERENT layer "
+              f"and is not comparable.\n"
+              f"      Fix: scripts/layer1_mpower.py --model {model} --cap {cap} "
+              f"--layer {layer} --window {window}")
+        f = alt
     return float(_json.loads(f.read_text())["auroc"])
 
 
@@ -144,7 +166,7 @@ def main() -> None:
     ensure_dirs()
     t0 = time.time()
     print(f"=== Layer 2 transfer | encoder={args.model} L{args.layer} | task={args.task} ===")
-    ceiling = _mpower_ceiling(args.model, args.cap)
+    ceiling = _mpower_ceiling(args.model, args.cap, args.layer, args.window)
     import torch
 
     from pdvoice.calibration import select_best_by_brier
