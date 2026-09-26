@@ -82,6 +82,75 @@ def chunks(wav: np.ndarray, sr: int = SAMPLE_RATE, seconds: float = CHUNK_S,
         yield wav[start : start + n]
 
 
+WINDOW_MODES = ("current", "full", "chunk-drift")
+
+
+def window_clip(path, task_kind: str, mode: str = "current", sr: int = SAMPLE_RATE,
+                normalise: bool = NORMALISE_AMPLITUDE) -> list[np.ndarray]:
+    """Return the list of waveforms the encoder should see for ONE recording.
+
+    The windowing decision was never an experiment -- the 2 s vowel core and the 5 s
+    speech chunk were inherited defaults. This makes the decision a parameter so it can
+    be measured. Three modes:
+
+    ``current``      vowel -> 2 s stable core; speech -> 5 s chunks at 50% overlap.
+                     Byte-for-byte what `preprocess_clip` + `chunks` already produce,
+                     so this mode reproduces every existing number.
+    ``full``         one window per recording: the whole trimmed vowel, or the whole
+                     VAD'd speech. Costs no more than ``current`` -- one long forward
+                     is cheaper than 12-48 short ones -- and stays inside VRAM: the
+                     longest recording in the corpus (250 s) peaks at 7.3 GiB.
+    ``chunk-drift``  IDENTICAL audio to ``current``. The difference is downstream: the
+                     between-window std is kept instead of discarded (see
+                     `pool_windows`). Listed here so the three modes read as one axis.
+
+    NOTE ON NORMALISATION ORDER. The vowel path normalises AFTER taking the core, the
+    speech path normalises BEFORE chunking. That asymmetry is inherited from
+    `preprocess_clip`, and it is reproduced rather than tidied: normalisation is a
+    scalar multiply, so it changes no measurement, but changing WHERE it happens would
+    stop `current` matching the caches every published number in this repo was built on.
+    """
+    if mode not in WINDOW_MODES:
+        raise ValueError(f"unknown window mode: {mode!r} (expected one of {WINDOW_MODES})")
+
+    wav = load_audio(path, sr=sr)
+    if task_kind == "vowel":
+        clean = trim_silence(wav)
+        if mode != "full":
+            clean = stable_core(clean, sr=sr, seconds=VOWEL_CORE_S)
+        return [normalise_amplitude(clean) if normalise else clean]
+
+    clean = voice_activity_trim(wav, sr=sr)
+    if normalise:
+        clean = normalise_amplitude(clean)
+    return [clean] if mode == "full" else list(chunks(clean, sr=sr))
+
+
+def pool_windows(means: np.ndarray, stds: np.ndarray, mode: str = "current") -> np.ndarray:
+    """Collapse per-window statistics into one vector per recording.
+
+    ``means`` and ``stds`` are (n_windows, ...) stacks of the per-window temporal mean
+    and temporal std of the hidden states.
+
+    Averaging per-window stds is NOT the std of the whole recording. By the law of total
+    variance the total splits into the variance WITHIN windows plus the variance BETWEEN
+    window means, and ``current`` keeps only the first term -- measured on real files,
+    its std runs 0.89-0.92 of the full-pass std, and the discarded between-window term is
+    0.10-0.13 of the within-window one. That term is the long-range drift: loudness decay
+    across a sentence, fatigue over a monologue, exactly the monopitch/monoloudness
+    effects a reviewer will ask about. ``chunk-drift`` appends it instead of dropping it.
+
+    With a single window there is no between-window variation to measure, so the drift
+    block is zeros. That is honest rather than useful: ``chunk-drift`` is only meaningful
+    for chunked connected speech.
+    """
+    mean, std = means.mean(axis=0), stds.mean(axis=0)
+    if mode != "chunk-drift":
+        return np.concatenate([mean, std], axis=-1)
+    drift = means.std(axis=0) if len(means) > 1 else np.zeros_like(mean)
+    return np.concatenate([mean, std, drift], axis=-1)
+
+
 def quality_control(df: pd.DataFrame, min_duration_s: float = MIN_DURATION_S):
     """Split a manifest into (kept, dropped) by basic QC. Adds a ``duration_s`` column."""
     durations = []
