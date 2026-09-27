@@ -403,36 +403,167 @@ mPower 0.94 figure (F-26).
 
 ---
 
-# STEP 4 — Feature extraction
+# STEP 4 — Feature extraction  ✅ FINAL
 
-`src/pdvoice/features/ssl.py` · `scripts/extract_windows.py`
+Turns a cleaned waveform into a **fixed-length row of numbers**, so recordings of different
+lengths become comparable. Everything before this step is audio; everything after is a
+matrix.
+
+**Two branches run in parallel, deliberately** — they measure different physics (4.5).
+
+`src/pdvoice/features/ssl.py` · `src/pdvoice/features/classical.py` ·
+`scripts/extract_windows.py`
+
+---
+
+## 4.1 Branch A — the frozen SSL encoder
 
 | | |
 |---|---|
-| encoder | **XLS-R-300M**, `facebook/wav2vec2-xls-r-300m` |
-| parameters | **315,438,720 — frozen, never updated** |
-| input | raw waveform. **No mel spectrogram.** |
-| frame rate | ~20 ms → (T, 1024) hidden states |
-| pooling | **mean ⊕ std** → **2048** |
-| cache | float16, keyed by cohort + path (identity-guarded) |
+| model | **XLS-R-300M** (`facebook/wav2vec2-xls-r-300m`) |
+| parameters | **315,438,720 — frozen** |
+| input | **raw waveform.** No mel spectrogram. |
+| frame rate | **~20 ms** → hidden states `(T, 1024)` |
+| pooling | **mean ⊕ std** over time → **2048** |
+| precision | float16 on disk |
 
-**Frame-rate consequence for the thesis:** jitter is cycle-to-cycle variation of a ~10 ms
-glottal period — *below* the 20 ms frame. XLS-R **cannot** represent jitter as a period
-measurement, only its spectral consequence. Vocal tremor at 4–6 Hz sits above it. This is
-why classical Praat features and SSL embeddings measure partly **different physics**.
+```
+2 s vowel (32,000 samples) → XLS-R → (99, 1024) → mean⊕std → (2048,)
+```
 
-**Encoder and layer choice — both tested:**
+**What the two halves are:** the mean of the 1024 is steady timbre — what the voice *is*.
+The std across frames is how much it *moves* — a tremor proxy. Both are needed; neither
+alone was competitive.
+
+### Why frozen
+
+1. **~900 patients.** Fine-tuning 315M parameters on that would memorise them.
+2. **Identical treatment of all four corpora.** Because the encoder never changes, a
+   Spanish/English difference is the *data* differing — not a model that re-tuned itself
+   on one corpus. This is what makes the transfer comparison mean anything.
+3. It is the field's dominant recipe (`docs/LITERATURE.md` §5).
+
+The encoder **never sees a Parkinson's label.**
+
+### Caching
+
+Keyed by cohort **and file path**, with an identity guard. A cache paired with the wrong
+rows does not raise — it silently returns chance performance, so paths are compared, never
+just lengths.
+
+---
+
+## 4.2 Branch B — classical acoustic features
+
+**42 descriptors** (`FEATURE_NAMES`), Praat-based — the measures clinicians actually use:
+
+| group | n | features |
+|---|---|---|
+| phonation | 5 | `jitter_local`, `jitter_rap`, `shimmer_local`, `shimmer_apq3`, `hnr` |
+| pitch | 3 | `f0_mean`, **`f0_sd`** (monopitch), `f0_cv` |
+| articulation | 8 | `f1/f2/f3_mean`, `f1/f2_sd`, `f1/f2_bandwidth`, `f2_f1_ratio` |
+| spectral | 26 | `mfcc_0..12` **mean and SD** |
+
+Expanded from 17 → 42 (**F-24**): added MFCC **standard deviations**, formant bandwidths,
+and `f0_sd`, and fixed the MFCC window from librosa's 128 ms music default to **25 ms /
+10 ms**. That expansion **halved the gap to SSL**, which is itself a finding — part of the
+apparent SSL advantage was an under-specified baseline.
+
+---
+
+## 4.3 Which encoder — and the honest answer about how it was chosen
+
+⚠️ **This selection has the same validity problem the layer choice had (F-29).**
+
+**How it was originally done:** the Layer-1 comparison ran on the **confounded** cohort,
+giving XLS-R **0.827**, HuBERT 0.745, wav2vec2 0.720, WavLM 0.659. Since deep
+representations encode age (F-32), that comparison was partly measuring *which encoder
+best encodes age*. It also gave XLS-R four layers and wav2vec2 exactly one — its last,
+the single configuration we now know is worst for every model family.
+
+**The corrected comparison** — `extract_all_layers.py` + `encoder_layer_sweep.py`, on the
+**age-matched cap-1 cohort**, **every layer of every encoder**, equal budget:
+
+| encoder | layers | best layer | AUROC | 95% CI | last layer | gain over last |
+|---|---|---|---|---|---|---|
+| **wav2vec2-base** | 13 | **0** | **0.6254** | [0.594, 0.658] | 0.5550 | +0.070 |
+| hubert-large | 25 | 4 | 0.6198 | [0.587, 0.652] | 0.5515 | +0.068 |
+| wavlm-large | 25 | 13 | 0.6178 | [0.584, 0.651] | 0.5684 | +0.049 |
+| **xls-r-300m** *(used)* | 25 | 8 | 0.6110 | [0.575, 0.645] | 0.5366 | +0.074 |
+| whisper-small | 13 | 8 | 0.5903 | [0.557, 0.622] | 0.5338 | +0.057 |
+
+**Three things fall out, and all three go in the thesis:**
+
+1. **No encoder wins.** Every confidence interval overlaps every other. The spread is
+   0.590–0.625 across five architectures and two orders of magnitude of parameter count
+   (**F-18**).
+2. **The nominal leader is the *smallest* model** — `wav2vec2-base`, at its **embedding
+   layer (0)**, before any transformer block runs. That is close to saying the transformer
+   stack contributes nothing detectable on the honest signal.
+3. **Every encoder peaks early and the last layer is worst for all five** (**F-19**),
+   gains of +0.049 to +0.074 over the final layer. Consistent with F-32: depth encodes
+   speaker identity, not pathology.
+
+### Why XLS-R is still used
+
+**Not because it won** — it ranks 4th of 5 and is statistically tied with the rest. It is
+retained because (a) it is the only **massively multilingual** encoder in the set, which
+matches a cross-language thesis, and (b) every downstream result is computed on it, so
+switching to a statistically indistinguishable alternative would cost a full re-run and
+buy nothing.
+
+> **Write it this way:** *"XLS-R-300M was retained for its multilingual pre-training rather
+> than for benchmark superiority; on an age-matched cohort with every layer searched, the
+> five encoders are statistically indistinguishable (0.590–0.625, all intervals
+> overlapping)."*
+
+**Never write** that XLS-R was selected because it performed best. On the honest cohort it
+did not.
+
+---
+
+## 4.4 Which layer — settled, and it did not help
 
 | question | answer | finding |
 |---|---|---|
-| which encoder? | 5 tested (XLS-R, HuBERT, WavLM, wav2vec2, Whisper), every layer | **F-18** — indistinguishable on the honest signal |
-| which layer? | all 25 scored by CV on training data alone | **F-29** — L15 ranks 13/25; L11 best |
-| does L11 fix transfer? | re-extracted and re-run end to end | **F-33** — no. 1 win, 2 losses |
-| do deep layers encode age? | last layer: 0.827 confounded → **0.531** age-matched, rank 25/25 | **F-32** 🟡 |
+| how was L15 chosen? | by its results **on the Spanish and Italian test sets** — selection on test data | F-29 |
+| what does honest CV prefer? | **L11**; L15 ranks **13 of 25** | F-29 |
+| does L11 fix transfer? | **No.** Re-extracted and re-run end to end: 1 win, 2 losses | **F-33** |
+| is depth itself a confound? | **Yes.** Last layer 0.827 confounded → **0.531** age-matched, rank 25/25 | **F-32** |
 
-**Classical features**, in parallel: `features/classical.py`, **42** descriptors (was 17)
-— MFCC mean+std at 25 ms/10 ms, formants + bandwidths, F0 SD, jitter, shimmer, HNR
-(**F-24**).
+**The honest conclusion is not "L11 is better."** It is that **vowel transfer fails at both
+layers, and L15's apparent advantage was manufactured by selecting it on the test sets.**
+Removing the selection bias removed the result rather than improving it.
+
+---
+
+## 4.5 Why both branches — the frame-rate argument
+
+This is the strongest single paragraph in the methods chapter, because it is physics
+rather than benchmarking.
+
+Jitter is cycle-to-cycle variation of a glottal period of about **10 ms**. XLS-R's frame
+is **20 ms**. The encoder is therefore **physically incapable** of representing jitter as
+a period measurement — only its spectral consequence. Vocal tremor at **4–6 Hz** sits
+comfortably above the frame rate and *is* representable.
+
+So neither branch subsumes the other. That prediction is confirmed: on the honest
+age-matched cohort, classical (**0.604**), SSL (**0.632**) and their fusion are
+**statistically indistinguishable** — DeLong p = 0.718 / 0.876 / 0.620 (**F-27**).
+
+---
+
+## 4.6 Limitations to state
+
+1. **The encoder was originally selected on a confounded benchmark.** Corrected, and the
+   corrected comparison shows no encoder wins (4.3).
+2. **The transfer layer was selected on test data** (F-29). Corrected at L11; transfer did
+   not improve (F-33).
+3. **The best-performing configuration is the smallest model's embedding layer**, which
+   undercuts any claim that scale or depth helps here.
+4. **XLS-R is retained for multilinguality and continuity, not performance.** Say so.
+5. **Embeddings encode nuisance attributes more strongly than the disease** — task 1.000,
+   sex 0.971, dataset 0.914, language 0.913, age 0.761, **PD last at 0.703** (F-20).
 
 ---
 
