@@ -12,7 +12,7 @@ Verified against the code on 2026-09-27, not from memory.
 
 ---
 
-# STEP 1 — Datasets
+# STEP 1 — Datasets  ✅ FINAL
 
 `src/pdvoice/data/` · registry `LOADERS`
 
@@ -22,19 +22,116 @@ Verified against the code on 2026-09-27, not from memory.
 | **NeuroVoz** | es | 2,976 | 114 | vowel, speech, ddk | clinician | test |
 | **IPVS** | it | 831 | 65 | vowel, speech | clinician | test |
 | **MDVR-KCL** | en | 73 | 37 | speech | clinician | test |
-| Bridge2AI | en | — | — | vowel, ddk, speech | clinician | ⏳ **access in progress — see STEP 11.** Loader raises `NotImplementedError` |
-| EWA-DB | — | — | — | — | — | 🔲 same |
+| Bridge2AI | en | — | — | vowel, ddk, speech | clinician | ⏳ **access in progress — STEP 11** |
+| EWA-DB | — | — | — | — | — | 🔲 loader raises `NotImplementedError` |
 
-- mPower has **2,129 unlabelled** recordings, dropped at step 3.
-- Two English corpora (mPower train, MDVR-KCL test) — lets a *language* change be
-  separated from a *dataset* change.
+mPower has **2,129 unlabelled** recordings, dropped at step 3. Two English corpora
+(mPower train, MDVR-KCL test) let a **language** change be separated from a **dataset**
+change — without that pair, RQ1 could not be answered.
 
-**Known defects, all measured:** F-13 (defects are class-correlated), F-17 (IPVS 44.1 kHz
-batch is PD-only, encoded at 0.79 but not load-bearing), F-28 (NeuroVoz vowel task codes
-leak the label — metadata alone gives **0.895**).
+---
 
-⚠️ **IPVS speaker IDs are real participant names.** Anything saved from them must be
-aggregated first.
+## 1.1 Integrity — what passed
+
+Verified 2026-09-27 across all four working corpora:
+
+| check | result |
+|---|---|
+| duplicate file paths | **0** |
+| subject overlap **between** datasets | **none** — no cross-corpus leakage |
+| subjects with contradictory labels | **0** |
+| null subject IDs | **0** |
+
+---
+
+## 1.2 Class balance — not comparable across corpora
+
+| corpus | PD | HC | **prevalence** |
+|---|---|---|---|
+| mPower | 897 | 3,912 | **0.187** |
+| NeuroVoz | 56 | 58 | 0.491 |
+| IPVS | 28 | 37 | 0.431 |
+| MDVR-KCL | 16 | 21 | 0.432 |
+
+⚠️ **AUPRC's chance level is the prevalence** (7.2). It is 0.187 at home and ~0.44 abroad,
+so AUPRC **cannot be compared across these corpora** without its prevalence beside it.
+A naive reading makes external AUPRC look better than it is.
+
+At prevalence 0.187 a constant "healthy" predictor scores **81% accuracy** — which is why
+accuracy is never reported (5.2).
+
+---
+
+## 1.3 Recordings per speaker — extreme imbalance in mPower
+
+| corpus | min | median | max | top 1% of speakers hold |
+|---|---|---|---|---|
+| **mPower** | 1 | 3 | **355** | **26.1%** of all recordings |
+| NeuroVoz | 1 | 27 | 31 | 1.0% |
+| IPVS | 3 | 16 | 16 | 1.9% |
+| MDVR-KCL | 1 | 2 | 2 | 2.7% |
+
+**One speaker contributed 355 recordings; 48 speakers hold a quarter of the corpus.** This
+is why capping (3.2) and subject-level scoring (5.4) both exist, and it is the defect
+behind the published mPower 0.94 (F-26).
+
+---
+
+## 1.4 Demographics — coverage and gaps
+
+| corpus | PD age | HC age | **gap** | age coverage | sex |
+|---|---|---|---|---|---|
+| mPower | 60.0 | 32.6 | **+27.5** | 99.4% | via `attach_sex`, **99.7%** |
+| IPVS | 67.1 | 46.6 | **+20.5** | 90.4% | ❌ none |
+| NeuroVoz | 71.1 | 64.0 | +7.1 | 95.7% | ❌ none |
+| MDVR-KCL | — | — | — | **0%** | ❌ none |
+
+**Three things follow, and all three belong in the thesis:**
+
+1. **The test sets are confounded too.** IPVS carries a 20.5-year gap of its own. This is
+   not an mPower-only problem, and NeuroVoz at +7.1 is the cleanest usable corpus.
+2. **MDVR-KCL can never be age-corrected** — 0% coverage. Combined with n = 37, every
+   MDVR result is weak on two counts simultaneously. **Say so wherever one is quoted.**
+3. **No external loader exposes sex.** Sex can be matched on mPower (3.6, 9.4) and
+   **nowhere else**, under any option.
+
+---
+
+## 1.5 Known defects — all measured, all disclosed
+
+| defect | corpus | magnitude | finding |
+|---|---|---|---|
+| **44.1 kHz batch is class-pure** | IPVS | **160 recordings, every one a patient**; rate alone predicts at 0.679 — but removing it leaves within-corpus **1.000** | F-17 |
+| **task codes leak the diagnosis** | NeuroVoz | code profile **0.895**; recording count alone **0.790**; **93.1%** of third repetitions are patients | F-28 |
+| **data defects are class-correlated** | mPower | unreadable rows were PD-enriched; capping before QC cost patients ~15% of slots vs ~5% for controls | F-13 |
+| **labels are self-reported** | mPower | tested and ruled out as the dominant problem (+0.012 / +0.011) | F-2 |
+
+---
+
+## 1.6 An asset that is not being used
+
+**MDVR-KCL carries `hy`, `updrs2_5`, `updrs3_18`** — Hoehn & Yahr stage and UPDRS severity
+scores. Every other corpus is binary diagnosis only.
+
+Not used anywhere in this thesis. Worth one sentence in future work: severity regression
+is the natural next question, and MDVR-KCL is the only corpus here that could seed it —
+though at n = 37 it could not carry the analysis alone.
+
+---
+
+## 1.7 Privacy constraints — non-negotiable
+
+⚠️ **IPVS speaker IDs are real participant names** (`ipvs_yhc_Alberto_R`). Anything derived
+from them must be **aggregated before it is written to any artifact**.
+
+⚠️ **mPower `healthCode`s are participant identifiers.** They must never reach a committed
+file. `notebooks/31_layer1_results.ipynb` carried five of them in stored outputs and has
+been removed from HEAD; **they remain in git history and on the remote**, which is an
+open decision, not a closed one.
+
+The datasets carry data-use agreements (mPower/Synapse, Bridge2AI/PhysioNet, PC-GITA)
+that prohibit redistribution. `/outputs/` and `pd-datasets/` are gitignored. **Data stays
+local.**
 
 ---
 
@@ -1419,21 +1516,171 @@ At that operating point the best age-matched model gives net benefit **0.09678**
 
 ---
 
-# STEP 10 — Results: the six that matter
+# STEP 10 — Results  ✅ FINAL
 
-| # | result | number | finding |
-|---|---|---|---|
-| 1 | **Age alone beats a 315M-parameter model** | **0.922** vs 0.796 | F-1, F-22 |
-| 2 | **Age-matching removes it** — baseline → chance, model survives | 0.531 vs **0.632** | F-7, F-22 |
-| 3 | **It is age, not labels** — the two hypotheses predict opposite things | labels +0.011/+0.010; age **−0.185/+0.124** | F-2 |
-| 4 | **No model beats any other** once the confound is gone | p 0.001/0.000/0.000 → **0.718/0.876/0.620** | F-27 |
-| 5 | **Contamination is a depth gradient** inside one encoder | 0.827 → **0.531**, rank 25/25 | F-32 |
-| 6 | **Small cohorts cannot resolve what they claim** | null change swings **±0.29** at n=37–50 | F-34 |
-
-Supporting: F-8 (speech ≫ vowel, transfers 0.70–0.85), F-9 (high within → worse transfer),
-F-23 (+1.3 per 1,000), F-26 (published mPower 0.94 comes from identity leakage).
+**Every number here is traceable to a named artifact.** Where two protocols give different
+values for the same quantity, both are given with the protocol named — quoting one without
+the other is how the thesis would become inconsistent.
 
 ---
+
+## 10.1 The six headline results
+
+| # | result | number | source |
+|---|---|---|---|
+| **1** | **Age alone beats a 315M-parameter model** | **0.922** vs 0.796 | `classifier_comparison.csv` |
+| **2** | **Age-matching removes it** — baseline → chance, model survives | **0.531** vs **0.632** | `classifier_comparison.csv` |
+| **3** | **It is age, not labels** — the hypotheses predict opposite things | labels **+0.012 / +0.011**; age **−0.184 / +0.124** | `label_sensitivity.json` |
+| **4** | **No model beats any other** once the confound is gone | DeLong **0.718 / 0.876 / 0.620** | `fusion__xls-r-300m__L15.json` |
+| **5** | **Contamination is a depth gradient** inside one encoder | 0.827 → **0.531**, rank 25/25 | `select_transfer_layer.csv` |
+| **6** | **Small cohorts cannot resolve what they claim** | null change swings **±0.29** at n=37–50 | F-34 grid |
+
+---
+
+## 10.2 Results 1 and 2 — the confound, and what survives it
+
+`classifier_comparison.csv`, best of five classifiers per feature set:
+
+| feature set | confounded | age-matched |
+|---|---|---|
+| **age only (1 number)** | **0.922** | **0.531** |
+| SSL embeddings (2048) | 0.796 | **0.632** |
+| classical (42) | 0.701 | 0.604 |
+
+**Read it in this order:**
+
+1. On the raw data, **one number with no microphone beats a 315-million-parameter speech
+   model** — 0.922 against 0.796.
+2. Age-matching collapses that baseline to **0.531**, a coin flip.
+3. The voice model survives at **0.632**. That is the real result, and it beats the
+   post-matching baseline by **+0.101**.
+
+> **The number to beat is 0.531, not 0.5.** State the baseline you are beating, every time.
+
+---
+
+## 10.3 Result 3 — the label-vs-age discriminator
+
+| scenario | PD/HC | within mPower | mean transfer |
+|---|---|---|---|
+| baseline | 897/3912 | 0.801 ± 0.050 | 0.481 |
+| **confident labels only** | 884/3848 | 0.813 (**+0.012**) | 0.491 (**+0.011**) |
+| **age-matched** | 562/562 | **0.617 (−0.184)** | **0.605 (+0.124)** |
+
+Cleaning labels moves **+0.012 / +0.011** — inside one SD, i.e. nothing. Age matching moves
+**−0.184 / +0.124**, in opposite directions.
+
+> **Hurting the home score while helping the real test is what a hidden bias looks like.
+> Label noise cannot produce that pattern.**
+
+---
+
+## 10.4 Result 4 — the model does not matter
+
+`fusion__xls-r-300m__L15.json`, same subjects, same splits, three tests:
+
+| comparison | cohort | DeLong | bootstrap | McNemar |
+|---|---|---|---|---|
+| SSL vs classical | confounded | 0.0006 | 0.000 | 0.0001 |
+| SSL vs fusion | confounded | 0.0000 | 0.000 | 0.0000 |
+| classical vs fusion | confounded | 0.0000 | 0.000 | 0.0000 |
+| SSL vs classical | **age-matched** | **0.7182** | 0.718 | 0.7891 |
+| SSL vs fusion | **age-matched** | **0.8762** | 0.880 | 0.9634 |
+| classical vs fusion | **age-matched** | **0.6197** | 0.622 | 0.8443 |
+
+**With the bias in, every difference is real. With it removed, none are — by three
+independent tests, two of which ask different questions** (ranking vs decisions).
+
+Corroborated at a larger scale by F-18 (five encoders indistinguishable) and F-27.
+
+⚠️ **Protocol note.** The AUROCs in this artifact (SSL 0.724 confounded / 0.588
+age-matched) come from the **MLP head alone**. `classifier_comparison.csv` reports 0.796 /
+0.632 because it takes the **best of five classifiers**. Both are correct; **name the
+protocol whenever you quote either.**
+
+---
+
+## 10.5 Result 5 — the depth gradient
+
+| layer | confounded | age-matched | rank (of 25) | loss |
+|---|---|---|---|---|
+| **last (24)** | **0.827** | **0.531** | **25** | **−0.296** |
+| 11 | 0.779 | 0.644 | **1** | −0.135 |
+| 15 | 0.763 | 0.612 | 13 | −0.151 |
+
+**The layer that wins hardest on confounded data is the one that collapses to chance when
+age is removed.** Same encoder, same audio, same labels — only depth changes. This is the
+confound demonstrated *inside a single model*.
+
+⚠️ **Flagged 🟡 (F-32).** The two columns come from different protocols — confounded from
+`layer1_mpower.py` (cap-3, 4,809 speakers, MLP, 5-fold CV), age-matched from
+`select_transfer_layer.py` (cap-1, 1,124 speakers, different classifier). **The direction
+is solid; the magnitudes are not strictly comparable.** Say so.
+
+---
+
+## 10.6 Result 6 — the methodological payload
+
+A windowing change with **no systematic effect** (mean −0.011 over 9 comparisons) moves
+individual external AUROCs by up to **±0.29**, on cohorts of **n = 37–50**.
+
+| | |
+|---|---|
+| within mPower | 0.763 → **0.841**, CIs disjoint — a clean, real improvement |
+| 9 external comparisons | mean **−0.011**, sd 0.149, range **−0.293 to +0.282** |
+
+**±0.29 is the size of the entire result most published external validations report.**
+
+It cuts both ways, which is what makes it credible: it applies to **your own favourable
+external numbers** as much as to the field's. Reporting all nine cells rather than the one
+that moved +0.282 is the difference between this thesis and what it critiques.
+
+---
+
+## 10.7 Supporting results
+
+| finding | result |
+|---|---|
+| **F-8** speech ≫ vowel, and it transfers | design B: every direction **0.67–0.85** (step 8.4) |
+| **F-30** speech transfer is not age-inflated | age matching *hurts* it: −0.146, −0.182 attributable to age |
+| **F-9** high within-score predicts worse transfer | IPVS: within **1.000**, worst outgoing transfer |
+| **F-20** the disease ranks last in the embedding | task 1.000, sex 0.971, corpus 0.914, language 0.913, age 0.761, **PD 0.703** |
+| **F-23** clinical utility | **+1.3 cases per 1,000** screened over testing everybody |
+| **F-26** the published mPower 0.94 | recording-level split — the same speaker in train and test |
+| **F-28** NeuroVoz task codes | filenames alone give **0.895**; 93.1% of third repetitions are patients |
+| **F-35** 🔴 transfer inverts | **12 of 30** design-A runs have their whole CI below 0.5 — **unexplained** |
+
+---
+
+## 10.8 The operating-point reality check
+
+Put this next to every AUROC, or the thesis overstates itself:
+
+| measure | value |
+|---|---|
+| AUROC, honest cohort | 0.632 |
+| **sensitivity at 90% specificity** | **0.12 – 0.15** |
+| net benefit over "test everybody" | **+1.3 per 1,000** |
+| external ECE | 0.22 – 0.40 (home: 0.03) |
+
+> *"AUROC 0.63 sounds like a result. Finding 15 patients in 100, and 1.3 extra cases per
+> 1,000 screened, is what it is worth."*
+
+---
+
+## 10.9 What the results do NOT support
+
+Stating these protects every other claim in the thesis.
+
+| do not claim | because |
+|---|---|
+| a usable Parkinson's screening tool | sensitivity 0.12–0.15; net benefit +1.3/1,000 |
+| SSL embeddings beat classical features | indistinguishable age-matched, by three tests |
+| XLS-R is the best encoder | 4th of 5, statistically tied (4.3) |
+| the pipeline is tuned | window, head and layer are defaults; one alternative tested each |
+| cross-language transfer is solved | design A fails; design B drops 0.15–0.30 |
+| the cohort is demographically matched | it is **age**-matched; sex is not (3.6) |
+| any single external number is reliable | ±0.29 noise at n=37–50 (10.6) |
 
 ---
 
