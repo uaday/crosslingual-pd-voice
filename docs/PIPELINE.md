@@ -740,25 +740,123 @@ This single choice is the difference between your numbers and the published mPow
 
 ---
 
-# STEP 6 — Calibrate, then LOCK
+# STEP 6 — Calibrate, then LOCK  ✅ FINAL
 
-`src/pdvoice/calibration.py` → `select_best_by_brier()`
+`src/pdvoice/calibration.py` · `src/pdvoice/eval/metrics.py`
 
-The head emits a raw logit, not a probability. Three calibrators are fitted **on the
-validation fold** and the best by Brier score is kept: **Temperature · Platt · Isotonic**.
-(Isotonic won all 5 folds at L11.)
+**This is the step that makes every transfer number mean something.** Without the lock,
+external results would be reports of how well the model *can be tuned* to a new corpus,
+not of how it *transfers*.
 
-All three are **monotone**, so calibration can never change AUROC — only ECE, MCE, Brier
-and anything threshold-dependent.
+---
 
-Then the operating threshold (**Youden's J**) is chosen on the same validation fold.
+## 6.1 Why calibration is needed at all
 
-> **Weights + calibrator + threshold are frozen before any external dataset is opened.
-> Nothing is re-fitted afterwards.** This is the property that makes the transfer numbers
-> mean anything.
+The head emits **one raw number** — a logit, unbounded. Fine for ranking, useless for
+telling a clinician "this person is 70% likely to have Parkinson's".
 
-**F-10:** calibration breaks off-domain far worse than discrimination — ECE 0.03 at home,
-**0.22–0.40** abroad. The ranking survives the journey; the probabilities do not.
+Worse, a model can be **right about the order and wrong about the numbers**: it can place
+every patient above every control and still claim everyone is 95% likely to be ill. The
+ranking is perfect; the probabilities are nonsense. AUROC cannot detect this. ECE, MCE and
+Brier can.
+
+---
+
+## 6.2 The three candidate maps
+
+| name | form | free parameters |
+|---|---|---|
+| **Temperature** | `sigmoid(logit / T)` | **1** — scale only |
+| **Platt** | logistic regression on the logit | **2** — scale *and* shift |
+| **Isotonic** | free monotone step function on `sigmoid(logit)` | non-parametric |
+
+`select_best_by_brier` fits **all three on the validation fold** and keeps the one with the
+lowest validation **Brier score** — the selection rule specified in the proposal.
+
+### All three are monotone — this matters
+
+A monotone map cannot reorder anything. Therefore **calibration can never change AUROC or
+AUPRC.** It changes ECE, MCE, Brier, and every threshold-dependent metric.
+
+> **Say this when asked whether calibration flatters the results:** *"Calibration is a
+> monotone transformation, so it cannot change AUROC by construction. It changes only the
+> probability values and the operating point."*
+
+**Observed:** isotonic won all five folds at L11 — unanimous, so not a coin flip. Isotonic
+is the most flexible of the three, which says the raw logits need genuine reshaping rather
+than rescaling.
+
+---
+
+## 6.3 The operating threshold
+
+`youden_threshold` maximises **Youden's J = sensitivity + specificity − 1**, computed on
+the **validation fold**, on calibrated probabilities.
+
+**Fitted on validation, never on train, never on test:**
+
+| fold | why not |
+|---|---|
+| train | the head has already fitted it and is overconfident there |
+| test | choosing a threshold on test data is using the answers to set your own dial |
+
+---
+
+## 6.4 THE LOCK
+
+> **Weights, calibrator and threshold are all frozen BEFORE any external dataset is
+> opened. Nothing is re-fitted afterwards.**
+
+```
+mPower train  ──► head weights
+mPower val    ──► early-stopping epoch + calibrator + threshold
+              ══════════ LOCK ══════════
+mPower test / NeuroVoz / IPVS / MDVR-KCL  ──► scored, never fitted
+```
+
+**What this buys, and why it is worth the cost:** if the threshold were re-picked on each
+external set, sensitivity and F1 would rise sharply — and the numbers would mean nothing,
+because they would describe a model tuned on its own test data. The locked numbers are
+lower and are the ones that answer the research question.
+
+> **Write:** *"The classifier weights, the calibration map and the operating threshold
+> were all fixed on a held-out mPower validation fold and applied unchanged to every
+> external corpus. No component was re-fitted after the lock."*
+
+---
+
+## 6.5 What the lock reveals — calibration breaks before discrimination does
+
+| corpus | ECE |
+|---|---|
+| mPower (home) | **0.03** |
+| external | **0.22 – 0.40** |
+
+**F-10.** The ranking survives the journey; the probabilities do not. This is a specific,
+quotable failure mode that AUROC alone would hide entirely, and it is one of the five
+evaluation requirements the thesis argues for.
+
+**Consequence for deployment:** a model can transfer usefully as a *ranker* and be
+unusable as a *probability estimate*. Any system that acts on a fixed probability
+threshold — which is every screening system — inherits that failure.
+
+---
+
+## 6.6 Limitations to state
+
+1. **The chosen calibrator is not persisted.** `select_best_by_brier` returns the name and
+   only **one** artifact in `outputs/logs/` records it. Which map was locked is therefore
+   not recoverable for most runs — a reproducibility gap, not a validity one.
+2. **NPV is absent from `threshold_metrics`** (it returns accuracy, sensitivity,
+   specificity, PPV, F1, balanced accuracy and the confusion matrix). This is one of the
+   ethics-form commitments. ✅ **It is recoverable, not lost** — `tn` and `fn` are both
+   stored, so `NPV = tn / (tn + fn)` can be computed from any saved artifact.
+3. **Calibration and decision curves are not reported for the external datasets** —
+   another ethics-form commitment.
+4. **Youden's J weights sensitivity and specificity equally**, which is not the clinical
+   objective for screening. The DCA work (step 7, `p_t = 0.10`) states the real exchange
+   rate — 9 false positives per case caught — but the locked threshold itself is still
+   Youden's.
 
 ---
 
