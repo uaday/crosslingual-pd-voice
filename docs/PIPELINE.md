@@ -226,7 +226,7 @@ age-matched (F-32). A gain visible only there is most likely a gain in age detec
 
 ---
 
-# STEP 3 — Cohort construction  ✅ FINAL (one decision open, see 3.6)
+# STEP 3 — Cohort construction  ✅ FINAL
 
 `src/pdvoice/cohort.py`
 
@@ -340,39 +340,41 @@ different corpus, a different lab, the same number (`docs/LITERATURE.md` §2).
 
 ---
 
-## 3.6 ⚠️ THE ONE OPEN DECISION — sex
+## 3.6 Sex — DECIDED: not matched, declared as a limitation
 
-`attach_sex` and `demographic_match_ids(on=("age","sex"))` **both exist and work.**
-They are not used anywhere. This is F-21 🔴.
+**Decision (2026-09-27): keep age-only matching.** The cohort is the 1,124-speaker
+age-matched one. Sex is **not** matched, and the residual imbalance is reported as a
+stated limitation rather than removed.
 
-Measured on mPower (sex coverage **99.7%**):
+The alternative was measured before deciding, so the choice is informed rather than
+inherited. On mPower, sex coverage **99.7%**:
 
 | cohort | subjects | PD | HC | age gap | female PD | female HC | imbalance |
 |---|---|---|---|---|---|---|---|
 | unmatched | 4,809 | 897 | 3,912 | +27.5 | 34.6% | 18.6% | **+16.0** |
-| **age-matched** (current) | **1,124** | 562 | 562 | +0.2 | 33.6% | 22.6% | **+11.0** |
-| age **+ sex** matched | **1,120** | 560 | 560 | +0.2 | 25.2% | 25.2% | **0.0** |
+| **age-matched — USED** | **1,124** | 562 | 562 | **+0.2** | **33.6%** | **22.6%** | **+11.0** |
+| age + sex matched — not used | 1,120 | 560 | 560 | +0.2 | 25.2% | 25.2% | 0.0 |
 
-**Age matching does not fix sex.** It narrows the imbalance from +16.0 to +11.0 and leaves
-it significant. Sex alone predicts the label at **0.58**, and the embeddings encode sex at
-**0.971** (F-20) — so the model has full access to it whether or not we intend that.
+**Age matching does not fix sex.** It narrows the imbalance from +16.0 to +11.0 points and
+leaves it there. `attach_sex` and `demographic_match_ids(on=("age","sex"))` exist and work;
+joint matching would cost **4 speakers** and remove the imbalance entirely. It was not
+adopted because every headline result is computed on the 1,124 cohort and re-running them
+was judged not worth the schedule risk this late.
 
-**Joint matching costs 4 speakers.** 1,124 → 1,120. It removes the sex imbalance entirely.
+### What must therefore be written
 
-**What is not free:** every existing age-matched number was computed on the 1,124 cohort.
-Switching means re-running the headline results. The cost is compute and re-checking, not
-data.
+> *"Speakers were frequency-matched on age in 5-year bins. Sex was not matched. In the
+> matched cohort the patient group remains 33.6% female against 22.6% of controls, and a
+> linear probe recovers speaker sex from the embeddings at AUROC 0.971. Sex alone predicts
+> the label at 0.58. We therefore cannot exclude a residual sex confound, and report this
+> as a limitation. Joint age-and-sex matching was implemented and would have cost four
+> speakers; it was not adopted because the reported results are computed on the
+> age-matched cohort."*
 
-> **This is your decision, and it is the last one outstanding in this step.**
-> **Option A — keep age-only matching.** Declare the residual sex imbalance as a stated
-> limitation, citing 33.6% vs 22.6% and the 0.971 probe.
-> **Option B — switch to age+sex.** Costs 4 speakers, closes F-21, requires re-running the
-> headline numbers.
+**Do not** claim the cohort is demographically matched. It is **age**-matched.
 
-⚠️ **Either way, the externals cannot be sex-matched** — none of the three external
-loaders return a `sex` column. That limitation stands under both options.
-
----
+⚠️ The externals cannot be sex-matched under any option — none of the three external
+loaders returns a `sex` column.
 
 ## 3.7 Splits
 
@@ -393,7 +395,7 @@ mPower 0.94 figure (F-26).
 1. **The honest cohort is only 1,124 speakers** — 77% of the data is spent on matching
    (F-16). Several results are underpowered as a direct consequence.
 2. **MDVR-KCL cannot be age-corrected** — 0% age coverage, n = 37.
-3. **Sex is not matched** — see 3.6; residual 33.6% vs 22.6%, probed at 0.971.
+3. **Sex is deliberately not matched** (decision, 3.6) — residual 33.6% vs 22.6%, probed at 0.971, and sex alone predicts the label at 0.58.
 4. **External corpora carry their own age gaps** — IPVS +20.5 yr, NeuroVoz +7.1 yr. The
    test sets are confounded too.
 5. **mPower labels are self-reported.** Tested and ruled out as the dominant problem (F-2:
