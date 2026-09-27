@@ -22,7 +22,7 @@ Verified against the code on 2026-09-27, not from memory.
 | **NeuroVoz** | es | 2,976 | 114 | vowel, speech, ddk | clinician | test |
 | **IPVS** | it | 831 | 65 | vowel, speech | clinician | test |
 | **MDVR-KCL** | en | 73 | 37 | speech | clinician | test |
-| Bridge2AI | en | — | — | — | clinician | 🔲 loader raises `NotImplementedError`; no data access |
+| Bridge2AI | en | — | — | vowel, ddk, speech | clinician | ⏳ **access in progress — see STEP 11.** Loader raises `NotImplementedError` |
 | EWA-DB | — | — | — | — | — | 🔲 same |
 
 - mPower has **2,129 unlabelled** recordings, dropped at step 3.
@@ -1435,6 +1435,107 @@ F-23 (+1.3 per 1,000), F-26 (published mPower 0.94 comes from identity leakage).
 
 ---
 
+---
+
+# STEP 11 — Bridge2AI  ⏳ PLANNED, ACCESS IN PROGRESS
+
+**Not started. This is the plan for when access is granted**, written now so that nothing
+has to be re-derived and no step gets improvised under deadline.
+
+---
+
+## 11.1 Why it matters
+
+Bridge2AI is the only corpus that would give **clinician-labelled English connected
+speech at scale**. That combination fixes three separate limitations at once:
+
+| limitation | how Bridge2AI addresses it |
+|---|---|
+| **F-16** — the honest cohort is capped at 1,124 speakers | a second large cohort to age-match within |
+| **mPower labels are self-reported** | clinician diagnosis |
+| **Design A trains on a vowel** (step 8) | English connected speech to train on, not just to test on |
+
+It also closes the awkward asymmetry in step 8: today the only corpus large enough to
+train on is the one with the weakest labels and the wrong task.
+
+---
+
+## 11.2 ⚠️ It will NOT arrive un-confounded — plan for that from day one
+
+Shukla et al. 2026 measured Bridge2AI v3.0.0 directly (`docs/LITERATURE.md` §2):
+
+| | Bridge2AI | mPower |
+|---|---|---|
+| PD age | 72.3 ± 8.7 | 60.0 |
+| control age | 44.8 ± 19.3 | 32.6 |
+| **age gap** | **+27.5 yr** | **+27.4 yr** |
+| age-only AUROC | **0.875** | 0.922 |
+
+**The same confound, the same size.** Do not treat Bridge2AI as the clean corpus that
+rescues the thesis — treat it as a second instance of the same problem, which is a
+*stronger* result: two independent corpora, two labs, the same 27.5-year gap.
+
+**Therefore:** `cohort.py` age matching applies from the first run. **Never report a
+Bridge2AI number on the raw cohort without the age-matched arm beside it.**
+
+---
+
+## 11.3 Access route
+
+| stage | status |
+|---|---|
+| PhysioNet — **derived features only**, free-speech spectrograms stripped | available, insufficient |
+| **Raw WAV** — requires a **DACO request + institutional sign-off**, delivered via Synapse | ⏳ **in progress** |
+
+**Blocker is a signature, not a technical step.** Supervisor involvement required.
+
+---
+
+## 11.4 The run order when it lands
+
+Everything below **reuses existing code**. No new pipeline is needed — that is the point
+of having finalised steps 1–10.
+
+| # | action | reuses | output |
+|---|---|---|---|
+| 1 | Implement `load_bridge2ai` to the standard manifest schema (`dataset`, `subject_id`, `path`, `label`, `task_kind`, `task_code`, `language`, `native_sr`) — plus **age and sex**, which no external loader currently exposes | `data/` conventions | manifest |
+| 2 | Map the 20 b2aiprep acoustic tasks onto our `vowel` / `ddk` / `speech` schema | memory note `pdvoice-bridge2ai-tasks` | task_kind |
+| 3 | Audit it like any other corpus **before** modelling: class-pure batches, sample rates, task-code leakage, recordings per speaker | step 9 audits (F-17, F-28 patterns) | integrity report |
+| 4 | Extract with `extract_windows.py --dataset bridge2ai` | step 4, unchanged | all-layer sweep |
+| 5 | **Design A**: locked mPower model → Bridge2AI | `layer2_transfer.py` | does the vowel model transfer to clinician labels? |
+| 6 | **Design B**: train a fresh head on Bridge2AI speech → test on IPVS / NeuroVoz / MDVR-KCL | `speech_agematch.py` | does a large clinician-labelled English speech corpus transfer? |
+| 7 | **Reverse**: train elsewhere → test on Bridge2AI | `speech_agematch.py` | fills the matrix |
+| 8 | Age-match **and** the size-matched-random control arm | step 8.4 three-arm design | is any of it age-inflated? |
+| 9 | Re-run the probes on Bridge2AI embeddings | step 9.3 | does PD still rank last? |
+
+⚠️ **Step 3 before step 4.** Both IPVS and NeuroVoz turned out to carry integrity defects
+(F-17, F-28) that were found *after* modelling. Audit first this time.
+
+---
+
+## 11.5 What it would let the thesis claim
+
+| if the result is | the claim becomes |
+|---|---|
+| Bridge2AI age gap reproduces, and age-matching collapses the baseline again | **three corpora, two labs, one confound** — the strongest possible version of the central argument |
+| design B works from Bridge2AI speech | connected speech transfers from a *large clinician-labelled* source, not only from 37–111-speaker clinical sets — which answers the n=37 objection to step 8.4 |
+| design A still fails on Bridge2AI | the vowel-model failure is not an mPower artefact |
+| the F-35 inversion reproduces | a real cross-task phenomenon, not a corpus quirk — **this is the most valuable single outcome available**, because it is currently unexplained |
+
+---
+
+## 11.6 If access does not arrive in time
+
+**Declare it, do not wait.** The thesis stands without Bridge2AI: the central argument is
+already carried by four corpora, three languages, and independent corroboration from
+Shukla et al. on Bridge2AI itself — *using their published numbers*, which requires no
+access at all.
+
+Write it as scoped future work with the run order in 11.4 attached, so it reads as a
+prepared next step rather than a gap.
+
+---
+
 # What is NOT done
 
 **I am not starting any of these without asking.** Listed so the gaps are visible.
@@ -1447,7 +1548,7 @@ F-23 (+1.3 per 1,000), F-26 (published mPower 0.94 comes from identity leakage).
 | D | **F-32 magnitudes come from two protocols** | ~30 min | Turns 🟡 → ✅, yields one strong figure |
 | E | Three ethics-form commitments: NPV, external calibration/DCA, age-band breakdown | ~1 h | Already signed up to on the form |
 | F | **F-35 inversion undiagnosed** | unknown | Declare as open question |
-| G | Bridge2AI access | weeks, needs institutional signature | Declare |
+| G | **Bridge2AI** — access in progress; full plan in **STEP 11** | weeks, needs institutional signature | Declare as scoped future work |
 | H | `chunk-drift` never evaluated (caches exist) | ~1 h | Future work |
 
 **Nothing here requires starting over.** A–E are all small, and every one reuses caches
