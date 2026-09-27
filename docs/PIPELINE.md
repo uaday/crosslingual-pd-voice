@@ -38,31 +38,191 @@ aggregated first.
 
 ---
 
-# STEP 2 — Audio cleaning
+# STEP 2 — Audio processing  ✅ FINAL
 
-`src/pdvoice/preprocess.py` → `preprocess_clip()` / `window_clip()`
+**Locked. Do not revisit.** Every parameter below is decided, its justification is either
+measured or explicitly marked as an untested default, and the numbers are ready to quote.
 
-| # | stage | vowel | speech |
+`src/pdvoice/preprocess.py` · `src/pdvoice/utils/audio.py`
+
+---
+
+## 2.0 The locked configuration
+
+| parameter | value | defined in | basis |
 |---|---|---|---|
-| 2.1 | decode + resample | → 16 kHz mono float32 | same |
-| 2.2 | remove non-speech | `trim_silence(top_db=30)` | **Silero VAD** |
-| 2.3 | window | central **2.0 s** core | **5 s** chunks, **50%** overlap |
-| 2.4 | normalise | **−23 dBFS** (EBU R128) | same, before chunking |
+| `SAMPLE_RATE` | **16 000 Hz**, mono | `config.py:36` | Nyquist — speech energy is < 8 kHz. Also the SSL encoders' required input. |
+| `trim_silence(top_db=)` | **30 dB** | `utils/audio.py:78` | librosa default; vowels only, discards 2–6% |
+| VAD | **Silero VAD** | `preprocess.py:27` | connected speech only; energy-trim fallback |
+| `VOWEL_CORE_S` | **2.0 s**, centred | `preprocess.py:20` | ⚠️ **untested default** — see 2.5 |
+| `CHUNK_S` | **5.0 s** | `preprocess.py:21` | ⚠️ **untested default** — see 2.5 |
+| `CHUNK_OVERLAP` | **0.5** (50%) | `preprocess.py:22` | ⚠️ **untested default** |
+| `TARGET_DBFS` | **−23.0 dBFS** | `preprocess.py:25` | EBU R128 broadcast reference |
+| `peak_ceiling` | 0.98 | `utils/audio.py:38` | clipping guard |
+| `MIN_DURATION_S` | **1.0 s** | `preprocess.py:19` | QC floor |
 
-**Why 16 kHz:** speech energy is below 8 kHz; by Nyquist, 16 kHz captures all of it.
+Identical for every dataset. No per-corpus tuning anywhere.
 
-**What each stage discards — measured, not assumed:**
+---
 
-| stage | discards | cost |
+## 2.1 Decode and resample → 16 kHz mono
+
+Inputs are mixed: 44.1 kHz (mPower, NeuroVoz, MDVR-KCL) and 16 kHz (most of IPVS). All
+converted to 16 kHz mono float32 in [−1, 1].
+
+**All 61,492 files are already single-channel**, so the mono conversion is a no-op — worth
+stating, because it removes a class of doubt for free.
+
+**Defensible sentence:** *"All audio was resampled to 16 kHz mono. Speech energy lies below
+8 kHz, so by the Nyquist criterion this preserves all speech information; it is also the
+input rate the self-supervised encoders require."*
+
+---
+
+## 2.2 Remove non-speech
+
+| task | method | retains |
+|---|---|---|
+| sustained vowel | `trim_silence(top_db=30)` | 94–98% |
+| connected speech | **Silero VAD** | 51–85% |
+
+⚠️ **This stage is class-correlated, and the direction is not consistent.** Derived from
+the F-31 per-speaker measurements:
+
+| corpus | HC retained | PD retained | difference |
+|---|---|---|---|
+| IPVS | 76.1% | **59.2%** | **−16.9 pts** |
+| MDVR-KCL | 59.9% | 52.3% | −7.6 pts |
+| NeuroVoz | 80.9% | **88.7%** | **+7.8 pts** |
+
+Patients pause more, so VAD deletes more of their recording — **except on NeuroVoz**,
+where the "speech" task is single words and the effect reverses.
+
+**This must be declared.** It is the same class of defect as F-13, but located in our own
+processing rather than in the data.
+
+**Why we keep it anyway** — three reasons, all real:
+1. The encoder needs bounded-length input.
+2. Raw silence carries **examiner speech** and room noise, which is a worse leak than the
+   one it fixes.
+3. The cost is measured, not guessed (F-31), and the fix is scoped: add a **timing feature
+   block alongside** the embeddings rather than removing the VAD.
+
+---
+
+## 2.3 Windowing
+
+| task | window |
+|---|---|
+| sustained vowel | central **2.0 s** (`stable_core`; returns the whole clip if shorter) |
+| connected speech | **5.0 s** chunks, **50%** overlap, embeddings averaged per recording |
+
+⚠️ **Windows per recording vary by 25× across corpora that are all labelled "connected
+speech":**
+
+| corpus / task | mean windows |
+|---|---|
+| NeuroVoz / speech | **1.0** — too short to chunk at all |
+| IPVS / speech | 11.2 (max 47) |
+| MDVR-KCL / speech | **31.1** (max 69) |
+
+**State this.** NeuroVoz "speech" is single words averaging 4.6 s. It and MDVR-KCL are not
+comparable quantities of material, and results should not be pooled across them without
+saying so.
+
+---
+
+## 2.4 Amplitude normalisation → −23 dBFS
+
+An explicit, named stage rather than a library side effect — this was **supervisor ask 2**.
+
+| corpus / task | in | out |
+|---|---|---|
+| mPower / vowel | −27.1 | −23.0 |
+| IPVS / vowel | −26.7 | −23.0 |
+| IPVS / speech | −29.7 | −23.2 |
+| NeuroVoz / speech | −32.2 | −23.0 |
+| MDVR-KCL / speech | −35.7 | −23.9 |
+
+**This is the one stage proven to change nothing.** `audits/amplitude_vs_harmonics.py`
+attenuates real recordings by **60 dB**, renormalises, and re-measures F0, HNR, jitter and
+shimmer: **all change by 0.00%** (F-14). It is a pure scalar multiply.
+
+**Defensible sentence:** *"Amplitude normalisation is a scalar operation and provably
+alters no measurement the analysis uses; we verified this by attenuating recordings across
+a 60 dB range and re-measuring F0, HNR, jitter and shimmer, all of which changed by
+0.00%."*
+
+**What it discards:** absolute loudness — hypophonia is a genuine PD sign. Unusable
+regardless: on an uncalibrated phone, quiet is indistinguishable from a phone held further
+away.
+
+---
+
+## 2.5 Are 2 s and 5 s justified? — the honest position
+
+**No citation supports them.** Checked 2026-09-27 (`docs/LITERATURE.md` §5):
+
+- **Klempíř & Krupička 2024** (*Sensors* 24(17):5520) — **whole file, no segmentation.**
+  *"we found this segmentation to be unnecessary."*
+- **Klempíř et al. 2025** (*CSBJ*) — **whole file**, mean aggregation.
+- **Koudounas et al. 2025** (*Interspeech*, MVP) — a fixed **5.0 s** pad-or-truncate, but
+  voice pathology generally, one clip, not averaged overlapping chunks.
+- **No source found for a 1–3 s vowel core.**
+
+**They are defended by experiment instead** — F-34, the 2 × 2 × 6 grid:
+
+| | result |
+|---|---|
+| within mPower | L11 0.779 → **0.816**; L15 0.763 → **0.841** (CIs disjoint) |
+| 9 external comparisons | mean **−0.011**, sd 0.149, range −0.293 to +0.282 |
+
+**Decision: keep 2 s / 5 s.** Full audio improves only the confounded home benchmark —
+which is where the last layer also scores highest before collapsing to chance once
+age-matched (F-32). A gain visible only there is most likely a gain in age detection.
+
+### Write this
+
+> *"Segment lengths were fixed at 2 s for sustained vowels and 5 s overlapping chunks for
+> connected speech. Rather than assume these, we evaluated them against passing each
+> recording in full — the configuration used by the studies we benchmark against. Full-length
+> input improved within-corpus AUROC from 0.763 to 0.841 with non-overlapping confidence
+> intervals, but changed external transfer by −0.011 on average across nine comparisons
+> (range −0.293 to +0.282). We therefore retained the shorter windows, since an improvement
+> confined to the demographically confounded training corpus is not evidence of
+> disease-relevant signal."*
+
+### Never write this
+
+- ❌ *"following standard practice"* / *"the field convention"* — **not supported**
+- ❌ *"we found no difference"* — say **"no difference our cohorts could detect"**; a +0.05
+  effect would be invisible in ±0.29 noise
+- ❌ that the windowing is tuned or optimal — two points were tested, not a range
+
+---
+
+## 2.6 What this step discards — declare unprompted
+
+| stage | discards | measured cost |
 |---|---|---|
 | VAD | pauses, hesitation, speech rate | **F-31** 🔴 — timing alone is worth IPVS **0.878**, still **0.769** age-matched |
-| 5 s chunks | long-range drift across an utterance | **F-34** — the between-chunk variance is 10–13% of within-chunk |
-| 2 s vowel core | 80% of every 10 s mPower vowel | **F-34** — costs nothing that transfers |
-| normalisation | absolute loudness (hypophonia) | **F-14** — 0.00% descriptor change over 60 dB; unusable on uncalibrated phones anyway |
+| 5 s chunks | long-range drift within an utterance | **F-34** — between-chunk variance is 10–13% of within-chunk |
+| 2 s vowel core | **80%** of every 10 s mPower vowel | **F-34** — costs nothing that transfers |
+| normalisation | absolute loudness (hypophonia) | **F-14** — 0.00% change to any used measure |
 
-✅ **The windowing was tested, not assumed** (F-34). Full-audio and chunk-drift variants
-were extracted for every corpus. Full audio improves mPower (0.763 → **0.841**) and is
-worth **−0.011** across 9 external comparisons. **Decision: keep 2 s / 5 s.**
+---
+
+## 2.7 Limitations to state in the thesis
+
+1. **VAD retention is class-correlated** — up to 16.9 points, and the sign flips between
+   corpora (2.2).
+2. **Window counts differ 25× across "connected speech" corpora** (2.3).
+3. **Segment lengths are defaults, not cited convention** — defended by F-34, not by
+   literature (2.5).
+4. **The windowing test was underpowered** — ±0.29 noise at n = 37–50 means only very
+   large effects were detectable (F-34).
+5. **Comparisons to Klempíř are not method-matched** — their numbers come from whole-file
+   embeddings, ours from averaged chunks.
 
 ---
 
