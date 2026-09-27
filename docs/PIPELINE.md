@@ -1089,23 +1089,167 @@ so `NPV = tn / (tn + fn)` (see 6.6).
    equally — not the screening objective that `p_t = 0.10` declares (6.6).
 ---
 
-# STEP 8 — Transfer
+# STEP 8 — Transfer  ✅ FINAL
 
-`scripts/layer2_transfer.py` — locked model, no retraining, no re-fitting.
+`scripts/layer2_transfer.py` (design A) · `scripts/speech_agematch.py` (design B)
 
-Three independent shifts, deliberately separable:
+**There are TWO transfer designs in this project, and they give opposite answers.**
+Conflating them is the single easiest way to misreport the thesis, so they are separated
+here and must be separated in the write-up.
 
-| shift | test |
+---
+
+## 8.1 The two designs
+
+| | **A — mPower-trained** | **B — speech-trained** |
+|---|---|---|
+| trained on | mPower **sustained vowel**, self-reported labels | an **external corpus's connected speech**, clinician labels |
+| tested on | every external corpus | the other external corpora |
+| model | **locked** — no refitting after step 6 | retrained per source, 5 seeds |
+| best result | **0.643** | **0.883** |
+| verdict | **fails, and often inverts** | **works** |
+
+Design A answers *"does a phone-app vowel model generalise?"* — **no**.
+Design B answers *"does connected speech carry transferable PD signal?"* — **yes**.
+
+---
+
+## 8.2 Three shifts, deliberately separable
+
+| shift | comparison | why it is isolable |
+|---|---|---|
+| **dataset** | mPower → MDVR-KCL | **both English** — so any drop is not language |
+| **language** | mPower → NeuroVoz (es), IPVS (it) | same task, different language |
+| **task** | vowel-trained → speech, ddk | same language available on both sides |
+
+Having two English corpora is what makes the dataset/language separation possible at all.
+**Result: task shift degrades as much as language shift**, so the fragility is *not*
+specifically linguistic (RQ1).
+
+---
+
+## 8.3 Design A results — the locked mPower model
+
+mPower internal ceiling: **0.779** (L11) / 0.763 (L15).
+
+| corpus / task | L11 | L15 | best of all runs |
+|---|---|---|---|
+| neurovoz / vowel | **0.643** | 0.618 | 0.643 |
+| neurovoz / ddk | 0.578 | 0.487 | 0.578 |
+| mdvr_kcl / speech | 0.469 | 0.601 | 0.643 *(with adaptation)* |
+| ipvs / vowel | 0.287 | 0.356 | 0.638 *(L15 full-window)* |
+| ipvs / speech | 0.265 | — | 0.327 |
+| neurovoz / speech | 0.255 | — | 0.255 |
+
+**Nothing in the entire project exceeds 0.643 under design A.** Against a 0.779 ceiling
+that is a transfer drop of 0.14 at best and 0.71 at worst.
+
+### ⚠️ 12 of 30 runs are significantly INVERTED — F-35 🔴
+
+Twelve of the thirty design-A evaluations have their **entire 95% CI below 0.5**. The
+model does not merely fail; it ranks patients **beneath** controls, so flipping its sign
+would beat it.
+
+The pattern is **not random across tasks**:
+
+| task | behaviour |
 |---|---|
-| **dataset** | mPower → MDVR-KCL (both English) |
-| **language** | mPower → NeuroVoz (es), IPVS (it) |
-| **task** | vowel-trained → speech, ddk |
+| **connected speech** | inverted almost everywhere — ipvs 0.225–0.327, neurovoz 0.189–0.255 |
+| **vowel** | at or above chance on NeuroVoz (0.561–0.643); inverted on IPVS |
+| **ddk** | at or just below chance (0.487–0.578) |
 
-**Results:** F-1, F-8, F-22, F-30, F-33, **F-35** 🔴.
+The head is trained on a sustained /a/; applied to connected speech, its decision axis
+aligns with something *anti*-correlated with PD.
 
-⚠️ **F-35 — 9 of 21 external evaluations are significantly INVERTED** (whole 95% CI below
-0.5). Every connected-speech cell on IPVS and NeuroVoz, while the same head on vowels
-stays at or above chance. **Reproducible, unexplained.**
+**Not explained.** Candidates to separate: cross-task domain shift; the age axis pointing
+the other way in clinical cohorts (mPower patients are *older* than controls, clinical
+cohorts are closer to balanced); or a recording-condition axis. **A sign flip is not a
+fix** — an inverted detector is still reading the wrong variable.
+
+---
+
+## 8.4 Design B results — speech-trained transfer works
+
+Mean over **5 seeds**, layer 15:
+
+| source | within | → ipvs | → mdvr_kcl | → neurovoz |
+|---|---|---|---|---|
+| **mdvr_kcl** (n=37) | 0.841 | **0.850** | — | **0.813** |
+| **neurovoz** (n=111) | 0.943 | 0.665 | **0.819** | — |
+| **ipvs** (n=65) | 0.972 | — | 0.698 | 0.695 |
+
+**Every direction transfers at 0.67–0.85**, against within-corpus 0.84–0.97. That is a
+drop of roughly 0.15–0.30 — large, but the result stays clearly useful, which is not true
+of anything in design A.
+
+**Why speech and not vowel (F-8):** holding /a/ tests only whether the larynx can sustain
+a steady tone. Talking tests whether the articulators can move far enough and fast enough.
+Parkinson's is a **movement** disorder, so the moving task detects it. Corroborated
+independently by VoiceFM (`docs/LITERATURE.md` §4).
+
+### The age control — and it cuts the other way (F-30)
+
+Speech transfer was checked for the same confound that destroyed design A, using a
+**three-arm design**: age matching also halves the cohort, so a drop could be the matching
+*or* the lost data. The third arm removes the same number of speakers **at random**,
+leaving the age gap intact. Only the difference between arms two and three is attributable
+to age.
+
+| direction | full | age-matched | size-matched random | **attributable to age** |
+|---|---|---|---|---|
+| neurovoz → ipvs | 0.665 | 0.557 | 0.703 | **−0.146** |
+| neurovoz → mdvr_kcl | 0.819 | 0.777 | 0.883 | **−0.105** |
+| ipvs → neurovoz | 0.695 | 0.564 | 0.746 | **−0.182** |
+| ipvs → mdvr_kcl | 0.698 | 0.684 | 0.711 | −0.026 |
+
+**Age matching HURTS speech transfer.** That is the opposite of design A, where matching
+*helped* transfer (+0.124) — and it is the key evidence that the speech result is **not**
+age-inflated. A confounded result gets *better* when you remove the confound from the test
+side; this one gets worse, which is what you expect when age-matching removes genuine
+disease-correlated variance along with the confound.
+
+⚠️ **The three-arm design is what makes this claim possible.** Without the random-removal
+arm the drop would look like a confound being exposed. Report all three arms.
+
+---
+
+## 8.5 Domain adaptation — the field's proposed fix does not work (F-5)
+
+The centroid correction `x̃ = x − μ_source + μ_target`, using **healthy-only** centroids,
+is the fix the cross-lingual literature proposes; it reportedly recovers sensitivity
+0.35 → 0.93 and drives language-ID to chance (`docs/LITERATURE.md` §5).
+
+Implemented as `--adapt hc-centroid` (mean only) and `--adapt hc-standardize`
+(mean + scale):
+
+| corpus | none | hc-centroid | hc-standardize |
+|---|---|---|---|
+| mdvr_kcl / speech | 0.595 | **0.643** | 0.629 |
+| neurovoz / vowel | 0.606 | 0.609 | **0.614** |
+| ipvs / vowel | 0.133 | 0.159 | 0.146 |
+
+**Best case +0.048. It never rescues anything, and it leaves IPVS deeply inverted.**
+Disagreeing with a published fix is a contribution and should be reported as one.
+
+⚠️ **The decisive test was never run.** These arms are all on the **confounded** cohort.
+Whether the centroid trick works on an **age-matched** cohort — which would show the
+published fix silently assumes demographically comparable groups — is the one experiment
+the original plan called *"highest novelty per hour"*, and it remains undone.
+
+---
+
+## 8.6 Limitations to state
+
+1. **12 of 30 design-A transfers are significantly inverted, and it is unexplained**
+   (8.3, F-35 🔴).
+2. **Nothing in design A exceeds 0.643** against a 0.779 ceiling.
+3. **Domain adaptation was never tested age-matched** (8.5) — the decisive arm is missing.
+4. **MDVR-KCL cannot be age-corrected** (0% age coverage) and has n = 37, so both design-B
+   rows involving it are weakly supported.
+5. **Design B retrains per source**, so it does not inherit design A's lock. Say which
+   design each number comes from, every time.
+6. **The transfer drop was computed against the wrong ceiling** in earlier runs — fixed
+   2026-09-27; drops reported at L15 before that date are overstated by 0.064.
 
 ---
 
