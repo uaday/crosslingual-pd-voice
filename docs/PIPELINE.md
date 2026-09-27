@@ -1253,21 +1253,169 @@ the original plan called *"highest novelty per hour"*, and it remains undone.
 
 ---
 
-# STEP 9 — Controls and probes
+# STEP 9 — Controls and probes  ✅ FINAL
 
-Each one exists because a specific failure mode had to be ruled out.
+**Every control here exists because a specific alternative explanation had to be killed.**
+That is the argument of the thesis: not that the model works, but that the failures have
+been diagnosed rather than assumed.
 
-| control | what it rules out | finding |
-|---|---|---|
-| **age-only baseline** | that the model beats trivial demographics | **F-1** — it does not: 0.922 vs 0.796 |
-| **age matching** (5-yr bins) | the age confound | **F-7, F-22** |
-| **label-noise arm** | self-reported labels as the cause | **F-2** — +0.011 / +0.010, nothing |
-| **embedding probes** | "what does the vector encode?" | **F-20** — task 1.000, sex 0.971, dataset 0.914, language 0.913, age 0.761, **PD last at 0.703** |
-| **5 classifiers × 5 encoders** | that the architecture matters | **F-18, F-27** — indistinguishable |
-| **raw-acoustic check** | that the confound is a model artifact | **F-3** — visible in LTAS, no model |
-| **multi-seed (5)** | single-seed overconfidence | **F-12, F-22** |
-| **task-code leak audit** | NeuroVoz metadata leakage | **F-28** — 0.895 from filenames |
-| **domain adaptation** (centroid, standardise) | the field's proposed fix | **F-5** — fails ⚠️ *confounded cohort only* |
+Write this as a table of *rival hypotheses and how each was ruled out*, not as a list of
+extra experiments.
+
+---
+
+## 9.1 The control table — what each one kills
+
+| control | rival hypothesis it kills | result | finding |
+|---|---|---|---|
+| **age-only baseline** | *"the model beats trivial demographics"* | **0.922 vs 0.796 — it does not** | F-1 |
+| **age matching** | *"the gap is language"* | age → **0.531**, model survives at 0.632 | F-7, F-22 |
+| **label-noise arm** | *"self-report is the problem"* | **+0.012 within, +0.002…+0.021 abroad** | F-2 |
+| **raw-acoustic check** | *"the confound is a model artefact"* | visible in LTAS, **no model involved** | F-3 |
+| **5 classifiers × 5 encoders** | *"a better architecture would fix it"* | all indistinguishable | F-18, F-27 |
+| **embedding probes** | *"what does the vector actually encode?"* | PD ranks **last** | F-20 |
+| **sex control** | *"age matching handles demographics"* | it does not — see 9.4 | F-21 |
+| **vowel-phoneme control** | *"the wrong vowel was used"* | /a/ vs all vowels: **0.554 vs 0.541** | — |
+| **IPVS batch audit** | *"the ceiling is a sample-rate artefact"* | rate alone 0.679, but removing it leaves **1.000** | F-17 |
+| **NeuroVoz task-code audit** | *"the corpus is clean"* | filenames alone give **0.895** | F-28 |
+| **multi-seed (5)** | *"one run is enough"* | SD up to **±0.106** | F-12 |
+
+---
+
+## 9.2 The label-vs-age discriminator — the cleanest argument in the thesis
+
+Two hypotheses, and they **predict opposite things**. That is what makes this decisive
+rather than suggestive.
+
+| | within mPower | IPVS | NeuroVoz | MDVR-KCL |
+|---|---|---|---|---|
+| baseline | 0.801 ± 0.050 | 0.404 ± 0.106 | 0.607 ± 0.023 | 0.431 ± 0.087 |
+| **confident labels only** | 0.813 ± 0.014 | 0.406 ± 0.074 | 0.616 ± 0.032 | 0.452 ± 0.102 |
+| **age-matched** | **0.617 ± 0.028** | **0.624 ± 0.086** | 0.601 ± 0.054 | — |
+
+**If labels were the problem**, cleaning them should improve everything. It moves nothing:
+**+0.012** at home, **+0.002 to +0.021** abroad — all inside one SD.
+
+**If age were the problem**, removing it should make the home score *worse* and the foreign
+scores *better*. It does exactly that: **−0.184 at home, +0.220 on IPVS.**
+
+> **Hurting your own headline number while helping the real test is what a hidden bias
+> looks like. Label noise cannot produce that pattern.**
+
+⚠️ Note the SDs. The single-seed versions of these numbers are not reportable (F-12).
+
+---
+
+## 9.3 Embedding probes — what the 2048 numbers actually encode
+
+Linear probes on the frozen embeddings, subject-disjoint:
+
+| attribute | metric | value | chance |
+|---|---|---|---|
+| **task** (vowel vs speech) | AUROC | **1.0000** | 0.50 |
+| **sex** | AUROC | **0.9712** | 0.50 |
+| corpus identity (3-way) | accuracy | 0.9138 | 0.33 |
+| language (3-way) | accuracy | 0.9125 | 0.33 |
+| age, young vs old | AUROC | 0.7607 | 0.50 |
+| **PD diagnosis** | AUROC | **0.7028** | 0.50 |
+| age (continuous) | R² | 0.1768 | 0.00 |
+| recording device (4-way) | accuracy | 0.3819 | 0.25 |
+
+**The disease is LAST among the things the representation encodes** — below task, sex,
+corpus, language and age. And the 0.703 is measured on the *confounded* cohort, so part of
+even that is age.
+
+**One honest counter-example worth keeping:** recording device probes at **0.382 against a
+0.25 chance level** — barely above chance. Not everything is confounded, and reporting the
+control that came back negative is what makes the positive ones credible.
+
+---
+
+## 9.4 Sex control — age matching does not handle demographics
+
+| cohort | n | female HC | female PD | age alone | sex alone | age+sex | **SSL** |
+|---|---|---|---|---|---|---|---|
+| raw | 4,772 | 18.5% | 34.5% | **0.9233** | 0.5800 | 0.9243 | 0.7285 |
+| **age-matched** *(used)* | 1,120 | 22.3% | 33.4% | 0.5053 | **0.5554** | 0.5361 | 0.5805 |
+| age+sex-matched | 1,120 | 25.2% | 25.2% | 0.5045 | 0.5000 | **0.4735** | 0.5944 |
+
+**Age matching drives the age baseline to chance (0.9233 → 0.5053) and leaves sex
+standing** at 0.5554, with the female share still 33.4% vs 22.3%.
+
+⚠️ **The age+sex row already exists** — it was computed by `sex_control.py`. Under joint
+matching the demographic baseline falls to **0.4735** (below chance) and the SSL model is
+**unharmed**: 0.5805 → **0.5944**.
+
+**Decision (3.6, Option A): age-only matching is retained**, and the residual sex confound
+is declared. This row is the evidence for the claim that joint matching was *available and
+understood*, not overlooked — and that it would not have cost performance.
+
+---
+
+## 9.5 Data-integrity audits
+
+### IPVS sample-rate batch (F-17)
+
+The 44.1 kHz batch is **class-pure — 160 recordings, every one a patient**. Sample rate
+alone predicts the label at **0.679**.
+
+**But it is not load-bearing.** Removing every 44.1 kHz patient leaves within-corpus AUROC
+at **1.000**, and removing the young healthy controls as well still leaves **1.000**.
+
+> **Disclose it; do not blame the ceiling on it.** The ceiling is real and the batch effect
+> is real, and they are separate facts.
+
+### NeuroVoz vowel task codes (F-28)
+
+| what leaks | AUROC |
+|---|---|
+| task-code **profile** (which codes a speaker has) | **0.8946** [0.825, 0.951] |
+| **recording count alone** | 0.7902 |
+| recording-level code | 0.6443 |
+
+**93.1% of third repetitions are patients.** HC average 8.64 recordings, PD 10.66 — so how
+*many* files a speaker has almost gives away the diagnosis, with no audio at all.
+
+⚠️ This affects **both sides** of the NeuroVoz vowel comparison in `LITERATURE.md` §3 —
+neither our 0.610 nor the published 0.646 is confound-free.
+
+### Vowel-phoneme control
+
+*"Did you just pick the wrong vowel?"* — no:
+
+| subset | NeuroVoz AUROC |
+|---|---|
+| all vowels | 0.5408 |
+| /a/ only | 0.5543 |
+| all vowels, 1 per speaker | 0.5644 |
+| /a/ only, 1 per speaker | 0.5392 |
+
+Phoneme choice moves nothing. The vowel task is weak because it is a **vowel**, not
+because it is the wrong one.
+
+---
+
+## 9.6 The objective function (F-23)
+
+`p_t = 0.10` — **9 false positives accepted per true case**, stated in advance.
+
+At that operating point the best age-matched model gives net benefit **0.09678** against
+**0.09614** for screening everybody: **+1.3 additional cases per 1,000 screened.**
+
+> *"AUROC 0.63 sounds like a result. +1.3 per 1,000 is what it is worth."*
+
+---
+
+## 9.7 Limitations to state
+
+1. **Probes are linear.** A non-linear probe would likely recover more; these are lower
+   bounds on what is encoded, not upper bounds.
+2. **Probes ran on mPower controls at layer 15** — not repeated at L11 or across corpora.
+3. **The age R² is low (0.177, MAE 9.1 yr)** while binary young-vs-old is 0.761. The
+   embedding encodes an age *band*, not an age. Do not overstate it.
+4. **Sex remains uncontrolled by choice** (3.6), with the cost quantified in 9.4.
+5. **The IPVS ceiling of 1.000 is unexplained** beyond ruling out the batch effect.
+6. **Domain adaptation was never tested age-matched** (8.5).
 
 ---
 
