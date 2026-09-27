@@ -597,24 +597,146 @@ age-matched cohort, classical (**0.604**), SSL (**0.632**) and their fusion are
 
 ---
 
-# STEP 5 — The head
+# STEP 5 — The head and the splits  ✅ FINAL
 
-`src/pdvoice/models/head.py` → `fit_mlp_head()`
+**The only part of the system that learns.** `src/pdvoice/models/head.py` ·
+`src/pdvoice/data/splits.py`
+
+---
+
+## 5.1 Architecture
 
 ```
-Linear(2048 → 256) → BatchNorm → ReLU → Dropout → Linear(256 → 1)
+Linear(2048 → 256) → BatchNorm1d(256) → ReLU → Dropout(0.3) → Linear(256 → 1)
 ```
 
-**525,313 parameters = 0.17%** of the system. This is the only part that learns.
+Outputs a **logit**, not a probability. The sigmoid is applied at calibration time
+(step 6).
 
-**Splits — subject-disjoint everywhere:**
+| layer | shape | params |
+|---|---|---|
+| `Linear` weight | (256, 2048) | 524,288 |
+| `Linear` bias | (256,) | 256 |
+| `BatchNorm` weight + bias | (256,) ×2 | 512 |
+| `Linear` weight | (1, 256) | 256 |
+| `Linear` bias | (1,) | 1 |
+| **total** | | **525,313** |
 
-| purpose | splitter |
+**525,313 against the encoder's 315,438,720 — 0.167%.** That ratio is the headline
+architectural fact: **99.83% of the system never learns anything about Parkinson's.**
+
+### Why deliberately shallow
+
+1. mPower labels are **self-reported** and noisy; a deep head would fit the noise.
+2. The head is **identical across all five encoders**, so the encoder comparison in 4.3
+   measures the *encoder*, not a per-encoder tuning budget.
+3. ~900 patients cannot support more capacity.
+
+---
+
+## 5.2 Training regime
+
+| setting | value |
 |---|---|
-| Layer-1 CV (5 folds) | `StratifiedGroupKFold` — subject-disjoint *and* label-balanced |
-| train/val for locking | `GroupShuffleSplit`, 15% validation |
+| loss | `BCEWithLogitsLoss` with **`pos_weight = n_neg / n_pos`** |
+| optimiser | Adam, `lr = 1e-3` |
+| max epochs | 200 |
+| early stopping | on **validation loss**, `patience = 20`, min-delta 1e-5 |
+| on stop | **restore the best epoch's weights** (`load_state_dict(best_state)`) |
+| dropout | 0.3 |
+| seed | 42 — weight init *and* dropout |
 
-Early stopping on validation loss, `patience=20`, then restore the best epoch's weights.
+### Class weighting is load-bearing
+
+mPower prevalence is **0.187** (897 PD / 3,912 HC). `pos_weight = neg/pos ≈ 4.36`
+compensates. Without it the head can reach 81% accuracy by predicting "healthy" for
+everyone — which is also why **accuracy is never reported** in this project.
+
+### Seeding is load-bearing
+
+An unseeded head **swung AUROC by up to ~0.04** run-to-run on XLS-R embeddings. That is
+larger than several differences the thesis discusses, so the seed is fixed and stated.
+This is the same lesson as F-12 (single-seed pilots hide instability).
+
+### ⚠️ Full-batch training — declare this
+
+The loop takes **one optimiser step per epoch on the entire training set**. There are no
+mini-batches. So `max_epochs = 200` means **at most 200 gradient steps in total**.
+
+This is a deliberate consequence of training a 0.5M-parameter head on **cached**
+embeddings — the whole training set fits in memory and an epoch costs one matrix multiply.
+But it is unusual enough that a reviewer will ask, so state it rather than let it be
+discovered. Note also that `BatchNorm` over a full batch is normalisation over the entire
+training set, not the usual stochastic estimate.
+
+`fit_mlp_head` records `_stopped_early`, `_epochs_run` and `_best_val_loss` on the
+returned model. **`_stopped_early = False` means training hit the epoch ceiling with
+validation loss still improving — the head is underfitted and every downstream number is
+pessimistic.** These diagnostics are computed but **not persisted to any artifact**, so
+the condition has never been audited across runs.
+
+---
+
+## 5.3 The splits — subject-disjoint everywhere
+
+**The cardinal rule: no participant appears in more than one partition.**
+
+| purpose | splitter | properties |
+|---|---|---|
+| Layer-1 cross-validation | `StratifiedGroupKFold`, **5 folds**, shuffled, seed 42 | subject-disjoint **and** label-balanced |
+| validation slice | `GroupShuffleSplit`, **`VAL_FRACTION = 0.15`** | carved from the non-test folds, also subject-disjoint |
+
+```
+all folds except test  ──GroupShuffleSplit──►  train (85%)  +  val (15%)
+test fold                                      touched once
+```
+
+Unlabelled rows get `fold = -1` and are excluded from CV entirely.
+
+### Three jobs for the validation slice
+
+1. **Early stopping** — the epoch whose weights get restored.
+2. **Fitting the calibrator** (step 6).
+3. **Choosing the operating threshold** (step 6).
+
+Not on train — the head has already fitted that data and is overconfident on it. Not on
+test — that would be using the answers to set your own dial.
+
+### `assert_disjoint` is a real guard, not decoration
+
+It raises on any subject appearing in two index groups. Leakage of this kind does **not**
+announce itself: it inflates scores quietly, which is exactly the defect behind the
+published mPower **0.94** (F-26 — that split is at *recording* level, so the same speaker
+appears in train and test).
+
+---
+
+## 5.4 Evaluation is always at SUBJECT level
+
+Predictions are averaged per `subject_id` before any metric is computed.
+
+**Why it is not optional:** one mPower speaker contributed **355 recordings** and another
+**1**. Recording-level scoring would let a single person count 355 times, and the heavy
+contributors are not a random sample of the cohort.
+
+This single choice is the difference between your numbers and the published mPower
+0.94–0.96 figures (F-26).
+
+---
+
+## 5.5 Limitations to state
+
+1. **Full-batch training, ≤ 200 gradient steps.** Defensible for a 0.5M head on cached
+   features, but unusual — declare it (5.2).
+2. **Underfitting has never been audited.** `_stopped_early` is computed and discarded; if
+   it is `False` anywhere, those numbers are pessimistic.
+3. **The head is not tuned.** Hidden size 256, dropout 0.3 and lr 1e-3 are defaults, not
+   searched. Deliberate — a per-encoder search would have broken the fairness of 4.3 —
+   but it means no claim of optimality can be made.
+4. **Results are single-seed except where stated.** F-7 and F-22 are 5-seed; most other
+   numbers are one seed, and F-12 shows single-seed pilots can be badly overconfident.
+5. **Accuracy is never reported**, by design — at prevalence 0.187 a constant "healthy"
+   predictor scores 81%.
 
 ---
 
