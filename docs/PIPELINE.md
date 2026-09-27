@@ -475,14 +475,36 @@ apparent SSL advantage was an under-specified baseline.
 
 ⚠️ **This selection has the same validity problem the layer choice had (F-29).**
 
-**How it was originally done:** the Layer-1 comparison ran on the **confounded** cohort,
-giving XLS-R **0.827**, HuBERT 0.745, wav2vec2 0.720, WavLM 0.659. Since deep
-representations encode age (F-32), that comparison was partly measuring *which encoder
-best encodes age*. It also gave XLS-R four layers and wav2vec2 exactly one — its last,
-the single configuration we now know is worst for every model family.
+### How it was originally done — and it was a real, significant win
 
-**The corrected comparison** — `extract_all_layers.py` + `encoder_layer_sweep.py`, on the
-**age-matched cap-1 cohort**, **every layer of every encoder**, equal budget:
+The Layer-1 comparison ran on the **confounded cap-3 cohort** (n = 4,809):
+
+| encoder | config | AUROC | 95% CI | configs tried |
+|---|---|---|---|---|
+| **xls-r-300m** | last layer | **0.827** | [0.811, 0.842] | **5** — LNone, L9, L11, L12, L15 |
+| hubert-large | L12 | 0.745 | [0.728, 0.761] | 2 |
+| wav2vec2-base | last layer | 0.720 | [0.701, 0.737] | **1** |
+| wavlm-large | L12 | 0.659 | [0.640, 0.677] | 2 |
+
+**The intervals do not overlap.** On that cohort XLS-R beats the others significantly, and
+this should not be dismissed — it is a real result under the protocol used. The problem is
+the protocol, and it has **two independent defects**:
+
+**Defect 1 — unequal search budget.** XLS-R was evaluated at **five** configurations,
+wav2vec2-base at **one**, and that one was its **last layer** — the single configuration
+we now have direct evidence is worst for every model family (F-19: gains of +0.049 to
++0.074 over the last layer, across all five encoders). So "XLS-R wins" was in part a
+statement about **search effort**, not architecture.
+
+**Defect 2 — confounded cohort.** Deep representations encode age (F-32: the last layer
+scores 0.827 confounded and **0.531** age-matched, rank 25 of 25). XLS-R's winning entry
+*is* its last layer — the most age-contaminated configuration in the set. So the
+comparison was partly measuring *which encoder best encodes age*.
+
+### The corrected comparison — both defects fixed at once
+
+`extract_all_layers.py` + `encoder_layer_sweep.py`, on the **age-matched cap-1 cohort**,
+**every layer of every encoder**, equal budget:
 
 | encoder | layers | best layer | AUROC | 95% CI | last layer | gain over last |
 |---|---|---|---|---|---|---|
@@ -512,10 +534,18 @@ matches a cross-language thesis, and (b) every downstream result is computed on 
 switching to a statistically indistinguishable alternative would cost a full re-run and
 buy nothing.
 
-> **Write it this way:** *"XLS-R-300M was retained for its multilingual pre-training rather
-> than for benchmark superiority; on an age-matched cohort with every layer searched, the
-> five encoders are statistically indistinguishable (0.590–0.625, all intervals
-> overlapping)."*
+> **Write both comparisons, in sequence** — together they are a stronger result than
+> either alone, because the finding is about *how encoder comparisons are conducted*, not
+> just about these five models:
+>
+> *"An initial comparison on the uncorrected cohort found XLS-R-300M significantly ahead
+> of the alternatives (0.827 against 0.745, 0.720 and 0.659, with non-overlapping
+> confidence intervals). That comparison was not equal-budget — XLS-R was evaluated at
+> five layers and wav2vec2-base at one, its last — and it was conducted on a cohort with a
+> 27.5-year age gap between groups. Repeating it on the age-matched cohort, with every
+> layer of every encoder searched, the five encoders become statistically indistinguishable
+> (0.590–0.625, all intervals overlapping). XLS-R-300M was retained for its multilingual
+> pre-training rather than for benchmark superiority."*
 
 **Never write** that XLS-R was selected because it performed best. On the honest cohort it
 did not.
