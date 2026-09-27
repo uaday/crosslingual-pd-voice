@@ -860,23 +860,185 @@ threshold — which is every screening system — inherits that failure.
 
 ---
 
-# STEP 7 — Evaluation: four questions, not one number
+# STEP 7 — Evaluation: four questions, not one number  ✅ FINAL
 
-`src/pdvoice/eval/`
+`src/pdvoice/eval/` — `discrimination.py`, `metrics.py`, `dca.py`, `report.py`
 
-| question | measures | finding |
+**This is the RQ3 contribution.** Each of the four questions exists because reporting only
+the one above it would have hidden a real failure found in this project.
+
+**Everything is computed at SUBJECT level**, never per recording (5.4).
+
+---
+
+## 7.1 The four questions
+
+| # | question | measures | what it caught |
+|---|---|---|---|
+| 1 | Can it separate the groups? | **AUROC**, AUPRC, 95% bootstrap CI | — |
+| 2 | Is the difference real? | **DeLong**, paired bootstrap | F-27 — every model difference vanishes age-matched |
+| 3 | Do the probabilities mean anything? | **ECE**, MCE, Brier | F-10 — ECE 0.03 home, 0.22–0.40 abroad |
+| 4 | Would using it help anyone? | **Decision Curve Analysis** | F-23 — +1.3 per 1,000 |
+
+---
+
+## 7.2 Discrimination
+
+| | |
+|---|---|
+| **AUROC** | primary metric. Probability a random patient outranks a random control. |
+| **AUPRC** | the same idea weighted toward the positive class |
+| **95% CI** | `bootstrap_ci`, **N_BOOTSTRAP = 1,000**, seed 42 |
+
+### ⚠️ The AUPRC trap — state it explicitly
+
+**AUROC's chance level is always 0.5. AUPRC's chance level is the prevalence.**
+
+| cohort | prevalence = AUPRC chance |
+|---|---|
+| mPower cap-3 | **0.187** |
+| NeuroVoz | 0.491 |
+| IPVS | 0.431 |
+| MDVR-KCL | 0.432 |
+
+So an AUPRC of 0.525 on IPVS, where prevalence is 0.431, is **barely above chance** — and
+the same number at home would be excellent. **AUPRC is not comparable across these corpora
+without its prevalence beside it.** Report them as a pair, always.
+
+---
+
+## 7.3 Significance
+
+| test | use | status |
 |---|---|---|
-| Can it separate them? | **AUROC** (primary), AUPRC, 95% bootstrap CI | AUPRC must be read against **prevalence**, not 0.5 |
-| Is the difference real? | **DeLong**, paired bootstrap, McNemar | F-27 — implementations agree to 3 dp |
-| Do probabilities mean anything? | Brier, **ECE**, MCE, reliability curve | F-10 |
-| Would using it help? | **Decision Curve Analysis**, `p_t = 0.10` | F-23 — **+1.3 per 1,000** |
+| **DeLong** (`delong_roc_test`) | paired AUROC, same subjects | ✅ implemented **and verified** |
+| **paired bootstrap** (`paired_bootstrap_auroc`) | paired AUROC, distribution-free | ✅ implemented |
+| ~~McNemar~~ | paired binary decisions | ❌ **NOT IMPLEMENTED — see 7.6** |
 
-**Scored per SUBJECT, never per recording** — one mPower speaker has 355 recordings.
-Operating point reported as Youden's J *plus* sensitivity at fixed 90% specificity
-(**0.12–0.15** — the least flattering, most useful number).
+### DeLong was verified, and that verification is worth reporting
 
-**F-11:** permutation testing is blind to class-correlated confounds — it will not catch
-this, which is why the age-matched arm exists.
+The implementation carried a source comment saying it had never been checked. It was
+validated against three cases with known answers:
+
+| case | expected | got |
+|---|---|---|
+| identical predictors | p = 1.0 | **1.0** |
+| strong vs weak | p ≈ 0 | **3.7e-59** |
+| two equal-quality predictors | p ≈ large | **0.553** |
+
+The paired bootstrap agreed each time. **Two independent implementations agreeing to
+three decimals is the evidence that both are correct** — and it is why the headline
+significance results can be trusted.
+
+### ⚠️ Permutation testing does not work here — F-11
+
+Permutation tests are **blind to class-correlated confounds**. Shuffling labels destroys
+the age–label association along with everything else, so the null distribution it builds
+is not the null you need. This is why the **age-matched arm** exists: it is the control
+that a permutation test cannot substitute for.
+
+---
+
+## 7.4 Calibration
+
+| metric | definition |
+|---|---|
+| **ECE** | mean \|observed − predicted\| over **10 equal-FREQUENCY bins** (`ECE_BINS = 10`) |
+| **MCE** | the **worst** single bin, not the average |
+| **Brier** | mean squared error of the probability; **lower is better** |
+
+⚠️ **Equal-frequency, not equal-width.** `calibration_error` sorts by predicted probability
+and splits into 10 equal-count bins. This matters: with equal-width bins on a skewed
+score distribution most bins are nearly empty and ECE becomes unstable. **Say which you
+used** — papers routinely do not, and the two are not comparable.
+
+**Brier mixes discrimination and calibration**, so it is a summary rather than a
+diagnosis. Report it with ECE, not instead of it.
+
+---
+
+## 7.5 Clinical utility — Decision Curve Analysis
+
+```
+net benefit  =  TP/n  −  (FP/n) × ( p_t / (1 − p_t) )
+```
+
+| | |
+|---|---|
+| threshold band | **0.05 – 0.30** (`DCA_THRESHOLDS`), the screening range |
+| headline `p_t` | **0.10** |
+| comparators | **treat-all** and **treat-none**, both computed |
+
+**Stating `p_t = 0.10` is a clinical commitment, not a hyperparameter.** It says: *we
+would accept **9 false positives to catch 1 true case**.* That exchange rate has to be
+declared in advance, and it is the thing DCA adds that no other metric on this page
+contains.
+
+**The benchmark that matters is not another model — it is "test everybody."** A model
+earns its place only by beating treat-all.
+
+**Result: +1.3 additional patients found per 1,000 people screened** (F-23).
+
+> **Write:** *"AUROC 0.63 sounds like a result. +1.3 per 1,000 is what it is worth."*
+
+---
+
+## 7.6 ⚠️ McNemar is claimed but does not exist
+
+`grep` finds **no McNemar implementation anywhere in the codebase.** It is nevertheless
+asserted in **five** documents:
+
+| file | claim |
+|---|---|
+| `PROJECT_CONTEXT.md` §stats | *"McNemar (binary decision)"* listed among the statistics used |
+| `PROJECT_CONTEXT.md` item 9 | *"DeLong/bootstrap/McNemar utilities"* listed as delivered code |
+| `RESEARCH_STATE.md` §4.4 | listed in the evaluation table |
+| `docs/thesis-outline.md` §3.2 | listed as a metric to define **with its formula** |
+| `docs/WRITING_PLAN.md` | carried over from the outline |
+
+**Nothing in the thesis may claim McNemar was used.** Two honest options:
+
+- **Drop it.** DeLong and the paired bootstrap already cover paired comparison, and they
+  agree. McNemar adds a decision-level test that no current result depends on.
+- **Implement it** (`statsmodels.stats.contingency_tables.mcnemar` on the locked
+  threshold's predictions). Small, but it is new work and no existing finding needs it.
+
+**Not started — this is a decision, not a task.**
+
+---
+
+## 7.7 The operating point
+
+| reported | why |
+|---|---|
+| Youden's J threshold, **locked on validation** | the decision the system would actually make |
+| full confusion matrix (tp/fp/fn/tn) | so any derived metric is recoverable |
+| sensitivity, specificity, PPV, F1, balanced accuracy | standard |
+| **sensitivity @ 90% specificity** | the realistic screening constraint |
+| ❌ **accuracy** — computed but never reported | at prevalence 0.187 a constant "healthy" predictor scores **81%** |
+
+**Sensitivity at 90% specificity is the least flattering and most useful number you have:
+0.12–0.15.** The model finds 12 to 15 patients per 100 at a usable operating point.
+
+> **Write:** *"AUROC 0.618 sounds mediocre but alive. At a usable operating point the same
+> model finds 15% of patients."*
+
+**NPV** is absent from `threshold_metrics` but **recoverable**: `tn` and `fn` are stored,
+so `NPV = tn / (tn + fn)` (see 6.6).
+
+---
+
+## 7.8 Limitations to state
+
+1. **McNemar is claimed in five documents and implemented nowhere** (7.6).
+2. **External calibration and decision curves are not reported** — an ethics-form
+   commitment still open.
+3. **NPV is not emitted**, though it is recoverable from stored confusion matrices.
+4. **AUPRC is reported without prevalence in some tables** — always pair them (7.2).
+5. **Most numbers are single-seed.** F-7 and F-22 are 5-seed; F-12 shows single-seed
+   pilots can be badly overconfident.
+6. **The locked threshold is Youden's J**, which weights sensitivity and specificity
+   equally — not the screening objective that `p_t = 0.10` declares (6.6).
 
 ---
 
