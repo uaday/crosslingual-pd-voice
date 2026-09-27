@@ -226,30 +226,178 @@ age-matched (F-32). A gain visible only there is most likely a gain in age detec
 
 ---
 
-# STEP 3 — Cohort construction
+# STEP 3 — Cohort construction  ✅ FINAL (one decision open, see 3.6)
 
-`src/pdvoice/cohort.py` → `load_mpower_cohort()`
+`src/pdvoice/cohort.py`
+
+---
+
+## 3.0 The order — and why it is not the obvious one
 
 ```
 load manifest → drop unlabelled → QUALITY CONTROL → cap N per subject (seeded) → attach age
 ```
 
-⚠️ **QC runs before the cap.** Capping first spends a speaker's N slots on files QC then
-deletes, and that loss is **not class-neutral** — patients lost ~15% of slots against ~5%
-for controls, because unreadable rows were PD-enriched.
+⚠️ **Quality control runs BEFORE the cap.** This is the reverse of what the original
+scripts did, corrected 2026-09-06.
+
+**Why it matters — this is a methods paragraph, not a detail.** Capping first spends a
+speaker's N slots on files that QC then deletes, so they silently contribute fewer
+recordings than intended. That loss was **not class-neutral**: patients lost **~15%** of
+their slots against **~5%** for controls, because the unreadable rows were PD-enriched. QC
+first costs a full pass over 55k file headers, which is slow, and correct.
+
+⚠️ `RESEARCH_STATE.md` §4.3 still documents the old order. **Do not copy it.**
+
+---
+
+## 3.1 Quality control
+
+| rule | value |
+|---|---|
+| minimum duration | **1.0 s** (`MIN_DURATION_S`) |
+| voicing floor | drop if voiced fraction < ~0.3 **or** HNR ≈ 0 |
+| amplitude | **never discard on amplitude** |
+
+**The amplitude rule is a deliberate reversal**, adopted after supervisor review. Quiet
+recordings look like failures and are not: normalise first, *then* judge voicing.
+Justification is F-14 — attenuating by 60 dB changes F0, HNR, jitter and shimmer by
+**0.00%**, so a quiet file carries the same information as a loud one.
+
+Measured effect: NeuroVoz vowel 1,066 → **1,064** recordings (2 dropped under 1 s).
+
+---
+
+## 3.2 Capping — `cap_per_subject`
+
+mPower recording counts are wildly uneven: **one speaker contributed 355 recordings,
+another 1**, and the top 1% of speakers hold **26%** of all recordings.
+
+Selection is a **seeded shuffle** (`seed=42`), so it is reproducible.
+
+**Why cap at all — measured, not assumed (F-15):** at cap-ALL the within-mPower score
+*falls* from 0.649 to 0.604 and calibration degrades badly. Heavy users dominate the
+training distribution and they are not representative.
+
+> ⚠️ **`cap_per_subject` preserves the DataFrame index on purpose.** Callers hold feature
+> matrices whose rows align with the input frame and select with `X[df.index.to_numpy()]`.
+> Resetting the index mid-pipeline pairs every recording with someone else's embedding —
+> which does not raise, it just returns chance performance. Reset at the end of a
+> pipeline, never in the middle.
+
+---
+
+## 3.3 The cohorts
 
 | cohort | recordings | speakers | used for |
 |---|---|---|---|
-| cap-3, confounded | **12,053** | **4,809** | the main training cohort |
+| cap-3, confounded | **12,053** | **4,809** | main training cohort |
 | cap-1 | 4,809 | 4,809 | classical baseline, probes |
-| **age-matched** (5-yr bins, 1:1) | 1,124 | 1,124 | **the honest cohort** |
+| **age-matched, cap-1** | 1,124 | **1,124** | **the honest cohort — every headline number** |
 
-**QC rule** (revised after supervisor review): never discard on amplitude. Normalise first,
-then judge voicing — drop only if voiced fraction < ~0.3 or HNR ≈ 0. Justification: F-14.
+---
 
-**The confound this exists to handle:** mPower PD ≈ 60 yrs, HC ≈ 33 — a **27.4-year gap**
-(F-1). Age matching is `age_match_ids`; `demographic_match_ids` also matches sex but is
-**not currently used anywhere** — see F-21 🔴.
+## 3.4 Age matching — `age_match_ids`
+
+**Method:** frequency matching in **5-year bins**. Within each bin keep
+`min(n_PD, n_HC)` speakers of each class. Seeded, and candidate ids are **sorted before
+sampling** so the same seed selects the same speakers regardless of row order — an earlier
+version sampled in arrival order, so capping (which reorders) silently changed the cohort.
+
+**Verification that it worked** — the check to quote: a classifier given **age alone**
+scores **0.922** before matching and **0.531** after. Age carries no label information in
+the matched cohort.
+
+| | subjects | PD | HC | age gap |
+|---|---|---|---|---|
+| unmatched | 4,809 | 897 | 3,912 | **+27.5 yr** |
+| age-matched | **1,124** | 562 | 562 | **+0.2 yr** |
+
+**Cost:** 3,685 speakers, 77% of the cohort. F-16 — the honest cohort is subject-limited
+at ~1,124, and that ceiling is the reason several results are underpowered.
+
+---
+
+## 3.5 The confound, quantified
+
+mPower PD ≈ **60.0 yr**, HC ≈ **32.6 yr** (F-1). Age coverage **99.4%**.
+
+**The external corpora are confounded too** — this is not an mPower-only problem:
+
+| corpus | PD | HC | gap | age coverage |
+|---|---|---|---|---|
+| mPower | 60.0 | 32.6 | **+27.5** | 99.4% |
+| IPVS | 67.1 | 46.6 | **+20.5** | 90.4% |
+| NeuroVoz | 71.1 | 64.0 | +7.1 | 95.7% |
+| MDVR-KCL | — | — | — | **0%** |
+
+⚠️ **MDVR-KCL has no age data at all.** It can never be age-matched or age-controlled, so
+every MDVR result is uncorrectable for the confound. With n = 37 it is the weakest evidence
+in the project on two counts at once. **State this.**
+
+Independent corroboration: Shukla et al. 2026 report a **27.5-year** gap on Bridge2AI — a
+different corpus, a different lab, the same number (`docs/LITERATURE.md` §2).
+
+---
+
+## 3.6 ⚠️ THE ONE OPEN DECISION — sex
+
+`attach_sex` and `demographic_match_ids(on=("age","sex"))` **both exist and work.**
+They are not used anywhere. This is F-21 🔴.
+
+Measured on mPower (sex coverage **99.7%**):
+
+| cohort | subjects | PD | HC | age gap | female PD | female HC | imbalance |
+|---|---|---|---|---|---|---|---|
+| unmatched | 4,809 | 897 | 3,912 | +27.5 | 34.6% | 18.6% | **+16.0** |
+| **age-matched** (current) | **1,124** | 562 | 562 | +0.2 | 33.6% | 22.6% | **+11.0** |
+| age **+ sex** matched | **1,120** | 560 | 560 | +0.2 | 25.2% | 25.2% | **0.0** |
+
+**Age matching does not fix sex.** It narrows the imbalance from +16.0 to +11.0 and leaves
+it significant. Sex alone predicts the label at **0.58**, and the embeddings encode sex at
+**0.971** (F-20) — so the model has full access to it whether or not we intend that.
+
+**Joint matching costs 4 speakers.** 1,124 → 1,120. It removes the sex imbalance entirely.
+
+**What is not free:** every existing age-matched number was computed on the 1,124 cohort.
+Switching means re-running the headline results. The cost is compute and re-checking, not
+data.
+
+> **This is your decision, and it is the last one outstanding in this step.**
+> **Option A — keep age-only matching.** Declare the residual sex imbalance as a stated
+> limitation, citing 33.6% vs 22.6% and the 0.971 probe.
+> **Option B — switch to age+sex.** Costs 4 speakers, closes F-21, requires re-running the
+> headline numbers.
+
+⚠️ **Either way, the externals cannot be sex-matched** — none of the three external
+loaders return a `sex` column. That limitation stands under both options.
+
+---
+
+## 3.7 Splits
+
+| purpose | splitter | property |
+|---|---|---|
+| Layer-1 CV, 5 folds | `StratifiedGroupKFold` | subject-disjoint **and** label-balanced |
+| train/val for locking | `GroupShuffleSplit`, `VAL_FRACTION=0.15` | subject-disjoint |
+
+**Subject-disjoint everywhere.** No speaker appears in two partitions. Evaluation is always
+at **subject level** — one mPower speaker has 355 recordings, so recording-level scoring
+would let one person count 355 times. This is exactly the defect behind the published
+mPower 0.94 figure (F-26).
+
+---
+
+## 3.8 Limitations to state
+
+1. **The honest cohort is only 1,124 speakers** — 77% of the data is spent on matching
+   (F-16). Several results are underpowered as a direct consequence.
+2. **MDVR-KCL cannot be age-corrected** — 0% age coverage, n = 37.
+3. **Sex is not matched** — see 3.6; residual 33.6% vs 22.6%, probed at 0.971.
+4. **External corpora carry their own age gaps** — IPVS +20.5 yr, NeuroVoz +7.1 yr. The
+   test sets are confounded too.
+5. **mPower labels are self-reported.** Tested and ruled out as the dominant problem (F-2:
+   +0.011 / +0.010), but it remains a data-provenance limitation.
 
 ---
 
