@@ -35,8 +35,9 @@ from pdvoice.cohort import age_match_ids, load_mpower_cohort
 from pdvoice.config import EMBEDDINGS, LOGS, SEED
 from pdvoice.data.splits import assign_folds, train_val_test_indices
 from pdvoice.eval.discrimination import (auprc, auroc, bootstrap_ci,
-                                         delong_roc_test,
+                                         delong_roc_test, mcnemar_test,
                                          paired_bootstrap_auroc)
+from pdvoice.eval.metrics import youden_threshold
 from pdvoice.features.classical import FEATURE_NAMES
 from pdvoice.models.head import fit_mlp_head
 
@@ -106,9 +107,25 @@ def pairwise_tests(preds):
             pa, pb = m.p_a.to_numpy(), m.p_b.to_numpy()
             _, _, p_delong = delong_roc_test(y, pa, pb)
             delta, p_boot = paired_bootstrap_auroc(y, pa, pb)
+
+            # DeLong asks whether one model RANKS better; McNemar asks whether the
+            # decisions it actually makes are better. Those come apart -- a model can
+            # rank better and decide no better -- so both are reported. Each model is
+            # binarised at ITS OWN Youden threshold, computed on its own scores:
+            # comparing decisions across a shared arbitrary cut such as 0.5 would
+            # largely measure which model happens to be better centred, not which one
+            # decides better.
+            da = (pa >= youden_threshold(y, pa)).astype(int)
+            db = (pb >= youden_threshold(y, pb)).astype(int)
+            mc = mcnemar_test(y, da, db)
+
             out[f"{a} vs {b}"] = {"delta": round(float(delta), 4),
                                   "p_delong": round(float(p_delong), 4),
                                   "p_bootstrap": round(float(p_boot), 4),
+                                  "p_mcnemar": round(float(mc["p_value"]), 4),
+                                  "mcnemar_method": mc["method"],
+                                  "mcnemar_n01": mc["n01"],
+                                  "mcnemar_n10": mc["n10"],
                                   "n_subjects": int(len(m))}
     return out
 
