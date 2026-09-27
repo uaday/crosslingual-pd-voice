@@ -913,7 +913,7 @@ without its prevalence beside it.** Report them as a pair, always.
 |---|---|---|
 | **DeLong** (`delong_roc_test`) | paired AUROC, same subjects | ✅ implemented **and verified** |
 | **paired bootstrap** (`paired_bootstrap_auroc`) | paired AUROC, distribution-free | ✅ implemented |
-| ~~McNemar~~ | paired binary decisions | ❌ **NOT IMPLEMENTED — see 7.6** |
+| **McNemar** (`mcnemar_test`) | paired binary **decisions** | ✅ implemented **and verified** |
 
 ### DeLong was verified, and that verification is worth reporting
 
@@ -983,29 +983,78 @@ earns its place only by beating treat-all.
 
 ---
 
-## 7.6 ⚠️ McNemar is claimed but does not exist
+## 7.6 McNemar — the decision-level test
 
-`grep` finds **no McNemar implementation anywhere in the codebase.** It is nevertheless
-asserted in **five** documents:
+**Implemented 2026-09-27** in `eval/discrimination.py`, after an audit found it asserted in
+five documents and present in none. It now exists, is verified, and is wired into the
+comparison path.
 
-| file | claim |
+### What it adds that DeLong does not
+
+**DeLong asks whether one model RANKS better. McNemar asks whether the decisions it
+actually makes are better.** Those come apart — a model can rank better and decide no
+better — which is exactly the situation this project keeps finding, so neither test
+substitutes for the other.
+
+Only the **discordant** pairs carry information. Cases both models get right, and cases
+both get wrong, say nothing about which is better:
+
+```
+n01 = model 1 wrong, model 2 right
+n10 = model 1 right, model 2 wrong
+```
+
+Under H₀ a discordant pair is a coin flip, so `n01 ~ Binomial(n01 + n10, 0.5)`.
+
+| n_discordant | method used |
 |---|---|
-| `PROJECT_CONTEXT.md` §stats | *"McNemar (binary decision)"* listed among the statistics used |
-| `PROJECT_CONTEXT.md` item 9 | *"DeLong/bootstrap/McNemar utilities"* listed as delivered code |
-| `RESEARCH_STATE.md` §4.4 | listed in the evaluation table |
-| `docs/thesis-outline.md` §3.2 | listed as a metric to define **with its formula** |
-| `docs/WRITING_PLAN.md` | carried over from the outline |
+| **< 25** | **exact binomial** |
+| ≥ 25 | chi-square with Edwards' continuity correction, `(|n01 − n10| − 1)² / (n01 + n10)` |
+| 0 | returns p = 1.0 — identical decisions, and both formulae are 0/0 here |
 
-**Nothing in the thesis may claim McNemar was used.** Two honest options:
+The small-sample routing matters: with cohorts of 37–50 speakers (F-34) the exact test is
+usually the one that fires, and the chi-square approximation would be unreliable there.
 
-- **Drop it.** DeLong and the paired bootstrap already cover paired comparison, and they
-  agree. McNemar adds a decision-level test that no current result depends on.
-- **Implement it** (`statsmodels.stats.contingency_tables.mcnemar` on the locked
-  threshold's predictions). Small, but it is new work and no existing finding needs it.
+### Verified against known answers
 
-**Not started — this is a decision, not a task.**
+Same discipline as the DeLong validation:
 
----
+| case | expected | got |
+|---|---|---|
+| identical decisions | p = 1.0 | **1.0** |
+| model 2 fixes 60 of model 1's errors | p ≈ 0 | **2.6e-14** |
+| equal quality, 40 errors each | p ≈ 1 | **0.911** |
+| n_discordant = 5 | routes to exact | **exact binomial** |
+| **vs `statsmodels.mcnemar`** | identical | **match to 1e-12** |
+
+### Where it runs
+
+`fusion.py → pairwise_tests`, alongside DeLong and the paired bootstrap. Each model is
+binarised at **its own Youden threshold**, computed on its own scores — comparing
+decisions across a shared arbitrary cut such as 0.5 would largely measure which model
+happens to be better centred, not which one decides better.
+
+### It independently reproduces the central result
+
+| comparison | | DeLong | bootstrap | **McNemar** |
+|---|---|---|---|---|
+| SSL vs classical | confounded | 0.0006 | 0.000 | **0.0001** |
+| SSL vs fusion | confounded | 0.0000 | 0.000 | **0.0000** |
+| classical vs fusion | confounded | 0.0000 | 0.000 | **0.0000** |
+| SSL vs classical | **age-matched** | 0.7182 | 0.718 | **0.7891** |
+| SSL vs fusion | **age-matched** | 0.8762 | 0.880 | **0.9634** |
+| classical vs fusion | **age-matched** | 0.6197 | 0.622 | **0.8443** |
+
+**Three independent tests, two of them asking different questions, all agreeing.** With
+the confound in, every model difference is real at both the ranking and the decision
+level. With it removed, none of them are, by any test.
+
+That is materially stronger than the two-test version, because a sceptic can no longer
+argue the result is an artefact of how AUROC is compared.
+
+⚠️ These McNemar values were computed from the **saved per-subject predictions** and added
+to `fusion__xls-r-300m__L15.json` without re-running the experiment. The AUROCs and the
+DeLong/bootstrap values are unchanged from the original run.
 
 ## 7.7 The operating point
 
@@ -1030,16 +1079,14 @@ so `NPV = tn / (tn + fn)` (see 6.6).
 
 ## 7.8 Limitations to state
 
-1. **McNemar is claimed in five documents and implemented nowhere** (7.6).
-2. **External calibration and decision curves are not reported** — an ethics-form
+1. **External calibration and decision curves are not reported** — an ethics-form
    commitment still open.
-3. **NPV is not emitted**, though it is recoverable from stored confusion matrices.
-4. **AUPRC is reported without prevalence in some tables** — always pair them (7.2).
-5. **Most numbers are single-seed.** F-7 and F-22 are 5-seed; F-12 shows single-seed
+2. **NPV is not emitted**, though it is recoverable from stored confusion matrices.
+3. **AUPRC is reported without prevalence in some tables** — always pair them (7.2).
+4. **Most numbers are single-seed.** F-7 and F-22 are 5-seed; F-12 shows single-seed
    pilots can be badly overconfident.
-6. **The locked threshold is Youden's J**, which weights sensitivity and specificity
+5. **The locked threshold is Youden's J**, which weights sensitivity and specificity
    equally — not the screening objective that `p_t = 0.10` declares (6.6).
-
 ---
 
 # STEP 8 — Transfer
