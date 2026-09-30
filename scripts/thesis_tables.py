@@ -402,6 +402,46 @@ def t_windowing() -> None:
        "0.29, on cohorts of 37--50 speakers.")
 
 
+def t_classical_transfer() -> None:
+    """Both feature families, both cohorts, the same two vowel corpora."""
+    cl = _j("classical_transfer__cap3.json")
+
+    def ssl(ds, layer=11):
+        f = LOGS / f"layer2__xls-r-300m__{ds}__vowel__L{layer}.json"
+        return json.loads(f.read_text())["auroc"] if f.exists() else None
+
+    rows = []
+    for scen, label in (("confounded", "Confounded"), ("age-matched", "Age-matched")):
+        b = cl["scenarios"][scen]
+        # The SSL transfer runs exist for the CONFOUNDED training cohort only --
+        # layer2_transfer.py has no age-matched arm. Repeating those numbers on the
+        # age-matched row would compare a matched classical model against a confounded
+        # SSL one, so that cell is left empty rather than filled with the wrong figure.
+        rows.append([label, "within mPower", f"{b['within_mpower']['auroc']:.3f}",
+                     "0.796" if scen == "confounded" else "0.632"])
+        for ds, name in (("ipvs", "IPVS"), ("neurovoz", "NeuroVoz")):
+            m = b["transfer"][ds]
+            a = f"{m['auroc']:.3f}"
+            if m["auroc_ci"][1] < 0.5:
+                a = "\\textbf{" + f"{m['auroc']:.3f}" + "}"
+            sv = ssl(ds) if scen == "confounded" else None
+            rows.append([label,
+                         "$\\rightarrow$ " + f"{name} ($n={m['n_subjects']}$)",
+                         a, f"{sv:.3f}" if sv else "--"])
+    _w("t4_11_classical_transfer.tex",
+       _tab(["Cohort", "Evaluated on", "Classical (42)", "SSL (2048)"], rows, "llrr"),
+       "Transfer of both feature families through the identical locked protocol, on the "
+       "two vowel corpora.",
+       "tab:classical-transfer",
+       "The classical branch uses the same head, the same calibrator selection and the "
+       "same locked threshold as the self-supervised branch; imputation and scaling are "
+       "fitted on mPower alone and reused unchanged. The SSL column is layer 11. Values "
+       "in bold have their entire 95\% confidence interval below 0.500. Neither family "
+       "transfers, and the IPVS inversion occurs for both, so it is not a property of the "
+       "encoder. Only vowel corpora are eligible, because the descriptors assume "
+       "sustained phonation.")
+
+
 def main() -> None:
     warnings.simplefilter("ignore")
     print("Chapter 3:")
@@ -409,7 +449,7 @@ def main() -> None:
     print("Chapter 4:")
     t_encoders_confounded(); t_encoders_matched(); t_protocol(); t_significance()
     t_transfer_a(); t_transfer_b(); t_agecontrol(); t_deviation(); t_probes()
-    t_windowing()
+    t_windowing(); t_classical_transfer()
     n = len(list(OUT.glob("*.tex")))
     print(f"\n{n} tables written to {OUT}")
 
