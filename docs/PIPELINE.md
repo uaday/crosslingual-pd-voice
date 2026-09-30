@@ -1027,12 +1027,20 @@ The paired bootstrap agreed each time. **Two independent implementations agreein
 three decimals is the evidence that both are correct** — and it is why the headline
 significance results can be trusted.
 
-### ⚠️ Permutation testing does not work here — F-11
+### ⚠️ Permutation testing — F-11, qualified
 
-Permutation tests are **blind to class-correlated confounds**. Shuffling labels destroys
-the age–label association along with everything else, so the null distribution it builds
-is not the null you need. This is why the **age-matched arm** exists: it is the control
-that a permutation test cannot substitute for.
+**Unrestricted** permutation is blind to class-correlated confounds. Shuffling labels
+freely destroys the age–label association along with everything else, so the null it
+builds is not the null you need, and a confounded model still looks significant against it.
+
+⚠️ **This does NOT generalise to all permutation testing.** **Chaibub Neto et al. (2019,
+npj Digital Medicine + KDD)** show that **restricted permutation** — shuffling *within*
+strata of the measured confound — **does** detect measured confounds, and they demonstrate
+it on **mPower specifically**, the same corpus used here.
+
+**So the honest claim is narrower than F-11 originally stated:** unrestricted permutation
+cannot substitute for the age-matched arm; restricted permutation is a legitimate
+alternative that we did not run. Cite Chaibub Neto and say which we used.
 
 ---
 
