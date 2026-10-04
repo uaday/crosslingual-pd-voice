@@ -599,6 +599,7 @@ def t_master() -> None:
        "Headline figures of this thesis and the settings that produced each. Figures quoted "
        "elsewhere refer to this table.",
        "tab:master",
+       "Appendix~\\ref{app:tables} gives the per-seed and per-run values. "
        "Field protocol: the uncorrected mPower cohort, capped at three recordings per "
        "participant (897 with a diagnosis, 3{,}912 without; prevalence 0.187). Age-matched: "
        "frequency-matched in 5-year bins (562 per group). Layer 24 is the encoder's final "
