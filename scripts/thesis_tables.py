@@ -332,7 +332,7 @@ def t_deviation() -> None:
          "English $\\rightarrow$ Italian 0.90 / 0.98", "$-$10 to $-$18"],
         ["Quan et al.\\ 2025 \\cite{quan2025}", "--", "cross-pair accuracy 67--83\\%",
          "34 (spread)"],
-        ["Kopar et al.\\ 2026 \\cite{kopar2026}", "--", "balanced accuracy", "$-$16"],
+        ["Kopar et al.\\ 2026 \\cite{kopar2026}", "--", "balanced accuracy", "+16"],
         ["Field survey \\cite{finlayson2021, cao2025}", "$\\sim$90\\%+", "independent data",
          "10 to 30"],
         ["\\midrule \\textbf{This thesis}, design A (confounded)", "0.801", "0.481",
@@ -441,9 +441,14 @@ def t_classical_transfer() -> None:
             if m["auroc_ci"][1] < 0.5:
                 a = "\\textbf{" + f"{m['auroc']:.3f}" + "}"
             sv = ssl(ds) if scen == "confounded" else None
+            s_cell = f"{sv:.3f}" if sv else "--"
+            if sv:
+                sj = json.loads((LOGS / f"layer2__xls-r-300m__{ds}__vowel__L11.json").read_text())
+                if sj["auroc_ci"][1] < 0.5:          # same rule as the classical column
+                    s_cell = "\\textbf{" + s_cell + "}"
             rows.append([label,
                          "$\\rightarrow$ " + f"{name} ($n={m['n_subjects']}$)",
-                         a, f"{sv:.3f}" if sv else "--"])
+                         a, s_cell])
     _w("t4_11_classical_transfer.tex",
        _tab(["Cohort", "Evaluated on", "Classical (42)", "SSL (2048)"], rows, "llrr"),
        "Transfer of both feature families through the identical locked protocol, on the "
@@ -541,9 +546,9 @@ def t_master() -> None:
          f"{mean_t(ls_runs, 'agematched'):.3f} $\\rightarrow$ "
          f"{mean_t(ad_runs, 'agematched'):.3f}", "15", "MLP head", "5",
          "\\S\\ref{subsec:variants}"],
-        ["Restricted permutation: observed vs within-age-bin null",
+        [f"Restricted permutation ({rp['n_perm']} permutations): observed vs within-age-bin null",
          f"{rp['observed']:.3f} vs {rp['within_age_bins']['null_mean']:.3f}", "15",
-         "PCA + logistic", f"{rp['n_perm']} perm.", "\\S\\ref{subsec:diagnosis}"],
+         "PCA + logistic", "1", "\\S\\ref{subsec:diagnosis}"],
         ["\\midrule \\multicolumn{6}{l}{\\emph{Classifier comparison, one recording per "
          "participant (field $\\rightarrow$ age-matched)}} \\\\[-0.2em]%", "", "", "", "", ""],
         ["Age alone", f"{best[('confounded', 'age only (1)')]:.3f} $\\rightarrow$ "
