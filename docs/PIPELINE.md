@@ -483,7 +483,7 @@ loaders returns a `sex` column.
 **Subject-disjoint everywhere.** No speaker appears in two partitions. Evaluation is always
 at **subject level** — one mPower speaker has 355 recordings, so recording-level scoring
 would let one person count 355 times. This is exactly the defect behind the published
-mPower 99.3% of Worasawate 2023 (F-26, corrected: the 0.94 study is participant-level).
+mPower 99.3% of Worasawate 2023 (F-26, corrected: the 0.94 study has no identity leakage; its released code tested on its training images).
 
 ---
 
@@ -817,7 +817,7 @@ Predictions are averaged per `subject_id` before any metric is computed.
 contributors are not a random sample of the cohort.
 
 This single choice separates your numbers from Worasawate's 99.3%. It does **not**
-explain Rahmatallah's ~0.95, which is participant-level (F-26, corrected 2026-10-04).
+explain Rahmatallah's ~0.95: that came from released code that trained and tested on the same images; re-run honestly their CNN gives ~0.6 (F-26, resolved 2026-10-05).
 
 ---
 
@@ -1654,7 +1654,7 @@ that moved +0.282 is the difference between this thesis and what it critiques.
 | **F-9** high within-score predicts worse transfer | IPVS: within **1.000**, worst outgoing transfer |
 | **F-20** the disease ranks last in the embedding | task 1.000, sex 0.971, corpus 0.914, language 0.913, age 0.761, **PD 0.703** |
 | **F-23** clinical utility | **+1.3 cases per 1,000** screened over testing everybody |
-| **F-26** the published mPower figures (corrected) | 99.3% (Worasawate 2023) is clip-level leakage; ~0.95 (Rahmatallah 2025) is participant-level, age-restricted, sex-imbalanced; **gap to ours unexplained** |
+| **F-26** the published mPower figures (corrected) | 99.3% (Worasawate 2023) is clip-level leakage; ~0.95 (Rahmatallah 2025) came from code that tested on its training images, ~0.6 honestly (`scripts/rahmatallah_cnn.py`); **gap to ours resolved, was unexplained** |
 | **F-28** NeuroVoz task codes | filenames alone give **0.895**; 93.1% of third repetitions are patients |
 | **F-35** 🔴 transfer inverts | **12 of 30** design-A runs have their whole CI below 0.5 — **unexplained** |
 
