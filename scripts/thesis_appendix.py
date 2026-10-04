@@ -35,7 +35,7 @@ def _j(name):
 
 
 def longtable(cols, header, rows, caption, label, note=""):
-    out = ["{\\small", f"\\begin{{longtable}}{{{cols}}}",
+    out = ["{\\small\\setlength{\\tabcolsep}{3pt}", f"\\begin{{longtable}}{{{cols}}}",
            f"\\caption{{{caption}}}\\label{{{label}}} \\\\", "\\toprule",
            " & ".join(f"\\textbf{{{h}}}" for h in header) + " \\\\", "\\midrule",
            "\\endfirsthead",
@@ -76,7 +76,7 @@ def a_transfer():
                      f"{s90:.3f}"])
     n_inv = sum(r[3].startswith("\\textbf") for r in rows)
     return longtable(
-        "p{2.6cm}p{3.3cm}rp{2.9cm}rrrr",
+        "p{2.4cm}p{3.0cm}rp{2.9cm}rrrr",
         ["Corpus / task", "Configuration", "PD/HC", "AUROC [95\\% CI]", "AUPRC", "ECE", "Brier",
          "Sens."],
         rows,
