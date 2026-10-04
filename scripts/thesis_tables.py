@@ -467,6 +467,14 @@ def t_master() -> None:
     """
     ls = {r["scenario"]: r for r in _j("label_sensitivity.json")["summary"]}
     ls_runs = _j("label_sensitivity.json")["runs"]
+    asx = {r["scenario"]: r for r in _j("label_sensitivity__agesex.json")["summary"]}
+    ad_runs = _j("label_sensitivity__adapt_centroid.json")["runs"]
+    rp = _j("restricted_permutation.json")
+    dc = _j("decision_curves.json")["age-matched | SSL, SVM"]
+
+    def mean_t(runs, sc):
+        return float(np.mean([np.nanmean([v for k, v in r.items() if k.startswith("transfer_")])
+                              for r in runs[sc]]))
 
     def gap(sc):
         rs = ls_runs[sc]
@@ -522,6 +530,20 @@ def t_master() -> None:
         ["Within minus mean transfer, field $\\rightarrow$ age-matched",
          f"{gap('baseline'):.1f} $\\rightarrow$ {gap('agematched'):.1f} pp", "24 vs 15",
          "MLP head", "5", "\\S\\ref{subsec:diagnosis}"],
+        ["Within mPower, age- and sex-matched (560 / 560)", pm(asx["agesexmatched"]["within"]),
+         "24", "MLP head", "5", "\\S\\ref{subsec:diagnosis}"],
+        ["$\\rightarrow$ IPVS / NeuroVoz / MDVR-KCL, age- and sex-matched",
+         f"{asx['agesexmatched']['ipvs'].split()[0]} / "
+         f"{asx['agesexmatched']['neurovoz'].split()[0]} / "
+         f"{asx['agesexmatched']['mdvr_kcl'].split()[0]}", "15", "MLP head", "5",
+         "\\S\\ref{subsec:diagnosis}"],
+        ["Mean transfer, age-matched, with centroid adaptation",
+         f"{mean_t(ls_runs, 'agematched'):.3f} $\\rightarrow$ "
+         f"{mean_t(ad_runs, 'agematched'):.3f}", "15", "MLP head", "5",
+         "\\S\\ref{subsec:variants}"],
+        ["Restricted permutation: observed vs within-age-bin null",
+         f"{rp['observed']:.3f} vs {rp['within_age_bins']['null_mean']:.3f}", "15",
+         "PCA + logistic", f"{rp['n_perm']} perm.", "\\S\\ref{subsec:diagnosis}"],
         ["\\midrule \\multicolumn{6}{l}{\\emph{Classifier comparison, one recording per "
          "participant (field $\\rightarrow$ age-matched)}} \\\\[-0.2em]%", "", "", "", "", ""],
         ["Age alone", f"{best[('confounded', 'age only (1)')]:.3f} $\\rightarrow$ "
@@ -558,6 +580,9 @@ def t_master() -> None:
         ["Net benefit at $p_t = 0.10$, model vs screen all" + "\\textsuperscript{b}",
          f"{ob['NB_at_target_prev']:.5f} vs {ob['NB_all_at_target_prev']:.5f}", "15", "SVM",
          "1", "\\S\\ref{sec:evaluation}"],
+        ["Largest decision-curve gain over both defaults, age-matched\\textsuperscript{c}",
+         f"{dc['max_gain_per_1000']:.1f} per 1{{,}}000 at $p_t = {dc['at_pt']:.2f}$", "15",
+         "SVM", "1", "Figure~\\ref{fig:dca}"],
     ]
     # rows that open a block carry their own line ending; drop the padding cells
     body_rows = []
@@ -581,7 +606,9 @@ def t_master() -> None:
        "matched for that corpus. \\textsuperscript{b}Computed on the age-matched cohort "
        f"(prevalence 0.5) and re-weighted to the mPower prevalence of 0.187; at this threshold "
        f"the model flags {ob['TP'] + ob['FP']:,} of {ob['TP'] + ob['FP'] + ob['TN'] + ob['FN']:,} "
-       f"participants (sensitivity {ob['sens']:.2f}, specificity {ob['spec']:.3f}).")
+       f"participants (sensitivity {ob['sens']:.2f}, specificity {ob['spec']:.3f}). "
+       "\\textsuperscript{c}Standard decision curve: positive when the prior-shifted "
+       "probability reaches $p_t$; net benefit at prevalence 0.187.")
 
 
 def main() -> None:
