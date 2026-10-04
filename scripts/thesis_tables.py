@@ -131,13 +131,22 @@ def t_baselines() -> None:
 
 
 # --------------------------------------------------------------- Chapter 4
+ENCODER_CITE = {
+    "xls-r-300m": " \\cite{babu2022xlsr}",
+    "hubert-large": " \\cite{hsu2021hubert}",
+    "wav2vec2-base": " \\cite{baevski2020}",
+    "wavlm-large": " \\cite{chen2022wavlm}",
+    "whisper-small": " \\cite{radford2023whisper}",
+}
+
+
 def t_encoders_confounded() -> None:
     rows = []
     for stem, label, cfgs in [
-        ("xls-r-300m__cap3__LNone", "XLS-R-300M", "5"),
-        ("hubert-large__cap3__L12", "HuBERT-large", "2"),
-        ("wav2vec2-base__cap3__LNone", "wav2vec2-base", "\\textbf{1}"),
-        ("wavlm-large__cap3__L12", "WavLM-large", "2"),
+        ("xls-r-300m__cap3__LNone", "XLS-R-300M \\cite{babu2022xlsr}", "5"),
+        ("hubert-large__cap3__L12", "HuBERT-large \\cite{hsu2021hubert}", "2"),
+        ("wav2vec2-base__cap3__LNone", "wav2vec2-base \\cite{baevski2020}", "\\textbf{1}"),
+        ("wavlm-large__cap3__L12", "WavLM-large \\cite{chen2022wavlm}", "2"),
     ]:
         d = _j(f"layer1_mpower__{stem}.json")
         lo, hi = d["auroc_ci"]
@@ -160,7 +169,7 @@ def t_encoders_matched() -> None:
     rows = []
     for r in sorted(d, key=lambda x: -x["best_layer_auroc"]):
         used = r["model"] == "xls-r-300m"
-        name = f"{r['model']}" + (" $^{*}$" if used else "")
+        name = f"{r['model']}" + ENCODER_CITE.get(r["model"], "") + (" $^{*}$" if used else "")
         rows.append([name, str(r["best_layer"]), f"{r['best_layer_auroc']:.4f}",
                      f"[{r['ci_lo']:.3f}, {r['ci_hi']:.3f}]",
                      f"{r['last_layer_auroc']:.4f}",
@@ -314,13 +323,15 @@ def t_agecontrol() -> None:
 
 def t_deviation() -> None:
     rows = [
-        ["Klemp\\'i\\v{r} 2024", "IPVS 0.99", "Italian $\\rightarrow$ English 0.72 / 0.78",
-         "+21 to +27"],
-        ["Klemp\\'i\\v{r} 2024", "MDVR-KCL 0.80",
+        ["Klemp\\'i\\v{r} 2024 \\cite{klempir2024}", "IPVS 0.99",
+         "Italian $\\rightarrow$ English 0.72 / 0.78", "+21 to +27"],
+        ["Klemp\\'i\\v{r} 2024 \\cite{klempir2024}", "MDVR-KCL 0.80",
          "English $\\rightarrow$ Italian 0.90 / 0.98", "$-$10 to $-$18"],
-        ["Quan et al.\\ 2025", "--", "cross-pair accuracy 67--83\\%", "34 (spread)"],
-        ["Kopar et al.\\ 2026", "--", "balanced accuracy", "$-$16"],
-        ["Seven-study survey", "$\\sim$90\\%+", "independent data", "10 to 30"],
+        ["Quan et al.\\ 2025 \\cite{quan2025}", "--", "cross-pair accuracy 67--83\\%",
+         "34 (spread)"],
+        ["Kopar et al.\\ 2026 \\cite{kopar2026}", "--", "balanced accuracy", "$-$16"],
+        ["Field survey \\cite{finlayson2021, cao2025}", "$\\sim$90\\%+", "independent data",
+         "10 to 30"],
         ["\\midrule \\textbf{This thesis}, design A (confounded)", "0.801", "0.481",
          "\\textbf{+32.0}"],
         ["\\textbf{This thesis}, design A (age-matched)", "0.617", "0.605",
