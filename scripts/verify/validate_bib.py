@@ -179,7 +179,7 @@ def dblp(title: str) -> dict | None:
     """DBLP covers NeurIPS, ICML/PMLR, ICLR, JMLR, AAAI and Interspeech, which mostly lack DOIs."""
     data = None
     for attempt in range(4):                           # DBLP answers HTML when throttled
-        r = get("https://dblp.org/search/publ/api",
+        r = get("https://dblp.uni-trier.de/search/publ/api",
                 params={"q": norm(title), "format": "json", "h": 5})
         try:
             data = r.json() if r is not None and r.status_code == 200 else None
@@ -294,7 +294,12 @@ def validate(e: dict) -> tuple[str, str, list[str]]:
         s, msgs = compare(e, ref)
         return s, ref["source"], msgs
     ref = crossref_search(title, sur)
-    if ref and sim(title, ref["title"]) >= 0.90:
+    try:
+        ey = int(e.get("year", 0))
+    except ValueError:
+        ey = 0
+    same_era = ref is not None and any(abs(y - ey) <= 1 for y in (ref.get("years") or {ey}))
+    if ref and same_era and sim(title, ref["title"]) >= 0.90:
         s, msgs = compare(e, ref)
         hint = [f"no DOI in bib; registry DOI {ref.get('doi')}"] if ref.get("doi") else []
         return ("NOTE" if s == "OK" else s), "Crossref search", hint + msgs
