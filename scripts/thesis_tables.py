@@ -42,10 +42,13 @@ def _w(name: str, body: str, caption: str, label: str, note: str = "") -> None:
 
 
 def _tab(header: list[str], rows: list[list[str]], align: str) -> str:
-    out = [f"\\begin{{tabular}}{{{align}}}", "\\toprule",
+    # An "L" column (defined in Main.tex as a ragged-right X column) makes this a
+    # tabularx at exactly the text width, so the table cannot run into the margin.
+    env, width = ("tabularx", "{\\linewidth}") if "L" in align else ("tabular", "")
+    out = [f"\\begin{{{env}}}{width}{{{align}}}", "\\toprule",
            " & ".join(f"\\textbf{{{h}}}" for h in header) + " \\\\", "\\midrule"]
     out += [" & ".join(r) + " \\\\" for r in rows]
-    out += ["\\bottomrule", "\\end{tabular}"]
+    out += ["\\bottomrule", f"\\end{{{env}}}"]
     return "\n".join(out)
 
 
@@ -66,7 +69,7 @@ def t_datasets() -> None:
     _w("t3_1_datasets.tex",
        "{\\small\\setlength{\\tabcolsep}{4pt}\n"
        + _tab(["Dataset", "Language", "Recordings", "Speakers", "Tasks", "Labels",
-               "Role"], rows, "llrrp{3.0cm}p{1.6cm}p{1.8cm}") + "\n}",
+               "Role"], rows, "llrrLlL") + "\n}",
        "Datasets used in this thesis. Counts are taken from the loaders before quality "
        "control and capping.",
        "tab:datasets",
@@ -313,7 +316,7 @@ def t_agecontrol() -> None:
        "{\\small\n"
        + _tab(["Direction", "Full", "Age-matched", "Size-matched random",
                "Attributable to age"], rows,
-              "p{4.0cm}p{1.4cm}p{1.9cm}p{2.3cm}p{2.3cm}") + "\n}",
+              "Lrp{1.8cm}p{2.1cm}p{2.1cm}") + "\n}",
        "Three-arm control separating the effect of age matching from the effect of the "
        "sample size it removes.",
        "tab:agecontrol",
@@ -345,7 +348,7 @@ def t_deviation() -> None:
     _w("t4_8_deviation.tex",
        "{\\small\n"
        + _tab(["Study", "Within", "Transfer", "Deviation (pp)"], rows,
-              "p{5.0cm}p{2.3cm}p{4.3cm}p{1.9cm}") + "\n}",
+              "Lp{2.3cm}Lp{1.7cm}") + "\n}",
        "Cross-dataset deviation reported in the literature, and in this thesis.",
        "tab:deviation",
        "The published band is roughly 8--34 percentage points, and one direction in "

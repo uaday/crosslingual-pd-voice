@@ -334,7 +334,9 @@ def f_two_designs() -> None:
 def main() -> None:
     warnings.simplefilter("ignore")
     f_protocol(); f_depth(); f_labels_vs_age(); f_windowing()
-    f_probes(); f_transfer_b(); f_agegap(); f_two_designs()
+    f_probes(); f_transfer_b(); f_agegap()
+    # f_two_designs() is no longer called: fig4_3_two_designs.pdf is now the author's
+    # hand-made version, and regenerating it here would overwrite that.
     n = len(list(OUT.glob("*.pdf")))
     print(f"\n{n} figures written to {OUT}")
 
