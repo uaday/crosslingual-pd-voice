@@ -64,8 +64,9 @@ def t_datasets() -> None:
          "Access pending"],
     ]
     _w("t3_1_datasets.tex",
-       _tab(["Dataset", "Language", "Recordings", "Speakers", "Tasks", "Label source",
-             "Role"], rows, "llrrlll"),
+       "{\\small\\setlength{\\tabcolsep}{4pt}\n"
+       + _tab(["Dataset", "Language", "Recordings", "Speakers", "Tasks", "Labels",
+               "Role"], rows, "llrrp{3.0cm}p{1.6cm}p{1.8cm}") + "\n}",
        "Datasets used in this thesis. Counts are taken from the loaders before quality "
        "control and capping.",
        "tab:datasets",
@@ -92,7 +93,7 @@ def t_demographics() -> None:
 
 
 def t_prevalence() -> None:
-    rows = [["mPower (cap-3)", "897", "3,912", "0.187"],
+    rows = [["mPower (3 per participant)", "897", "3,912", "0.187"],
             ["NeuroVoz", "56", "58", "0.491"],
             ["IPVS", "28", "37", "0.431"],
             ["MDVR-KCL", "16", "21", "0.432"]]
@@ -197,7 +198,7 @@ def t_protocol() -> None:
          f"{best[('age-matched','classical (42)')]:.3f}"],
         ["SSL embeddings (2048)", f"{best[('confounded','SSL embeddings (2048)')]:.3f}",
          f"\\textbf{{{best[('age-matched','SSL embeddings (2048)')]:.3f}}}"],
-        ["\\midrule Within-to-transfer gap", "\\textbf{32.0 pp}", "\\textbf{1.2 pp}"],
+        ["\\midrule Within-to-transfer gap", "\\textbf{32.1 pp}", "\\textbf{1.2 pp}"],
     ]
     _w("t4_3_protocol.tex",
        _tab(["", "Field protocol (confounded)", "Controlled protocol (age-matched)"],
@@ -309,8 +310,10 @@ def t_agecontrol() -> None:
                          f"{full:.3f}", f"{am:.3f}", f"{sr:.3f}",
                          f"\\textbf{{{am - sr:+.3f}}}"])
     _w("t4_7_agecontrol.tex",
-       _tab(["Direction", "Full", "Age-matched", "Size-matched random",
-             "Attributable to age"], rows, "lrrrr"),
+       "{\\small\n"
+       + _tab(["Direction", "Full", "Age-matched", "Size-matched random",
+               "Attributable to age"], rows,
+              "p{4.0cm}p{1.4cm}p{1.9cm}p{2.3cm}p{2.3cm}") + "\n}",
        "Three-arm control separating the effect of age matching from the effect of the "
        "sample size it removes.",
        "tab:agecontrol",
@@ -333,14 +336,16 @@ def t_deviation() -> None:
         ["Field survey \\cite{finlayson2021, cao2025}", "$\\sim$90\\%+", "independent data",
          "10 to 30"],
         ["\\midrule \\textbf{This thesis}, design A (confounded)", "0.801", "0.481",
-         "\\textbf{+32.0}"],
+         "\\textbf{+32.1}"],
         ["\\textbf{This thesis}, design A (age-matched)", "0.617", "0.605",
          "\\textbf{+1.2}"],
         ["\\textbf{This thesis}, design B", "0.841--0.972", "0.665--0.850",
          "\\textbf{+16.2}"],
     ]
     _w("t4_8_deviation.tex",
-       _tab(["Study", "Within", "Transfer", "Deviation (pp)"], rows, "lllr"),
+       "{\\small\n"
+       + _tab(["Study", "Within", "Transfer", "Deviation (pp)"], rows,
+              "p{5.0cm}p{2.3cm}p{4.3cm}p{1.9cm}") + "\n}",
        "Cross-dataset deviation reported in the literature, and in this thesis.",
        "tab:deviation",
        "The published band is roughly 8--34 percentage points, and one direction in "
@@ -453,6 +458,132 @@ def t_classical_transfer() -> None:
        "sustained phonation.")
 
 
+def t_master() -> None:
+    """One place for every headline number, with the settings that produced it.
+
+    Several headline figures come from different runs (layer, cohort, classifier, seeds),
+    and quoting them side by side without saying so made them look inconsistent. Every
+    chapter now cites this table when it quotes one of these figures.
+    """
+    ls = {r["scenario"]: r for r in _j("label_sensitivity.json")["summary"]}
+    ls_runs = _j("label_sensitivity.json")["runs"]
+
+    def gap(sc):
+        rs = ls_runs[sc]
+        w = np.mean([r["within"] for r in rs])
+        t = np.mean([np.nanmean([v for k, v in r.items() if k.startswith("transfer_")])
+                     for r in rs])
+        return 100 * (w - t)
+
+    def pm(s):
+        return s.replace("+/-", "$\\pm$")
+
+    def ext(sc):
+        r = ls[sc]
+        return f"{r['ipvs'].split()[0]} / {r['neurovoz'].split()[0]} / {r['mdvr_kcl'].split()[0]}"
+
+    cc = pd.read_csv(LOGS / "classifier_comparison.csv")
+    best = cc.groupby(["cohort", "features"]).AUROC.max()
+    mlp = cc[cc.classifier.str.startswith("MLP")].set_index(["cohort", "features"]).AUROC
+    lr = cc[cc.classifier.str.startswith("logreg")].set_index(["cohort", "features"]).AUROC
+    sel = _j("select_transfer_layer.json")
+    sweep = {r["model"]: r for r in _j("encoder_layer_sweep.json")["best"]}
+    span = [r["best_layer_auroc"] for r in sweep.values()]
+    l11 = _j("layer1_mpower__xls-r-300m__cap3__L11.json")["auroc"]
+    ta = []
+    for ds, task in [("neurovoz", "vowel"), ("neurovoz", "ddk"), ("mdvr_kcl", "speech"),
+                     ("ipvs", "vowel"), ("ipvs", "speech"), ("neurovoz", "speech")]:
+        f = LOGS / f"layer2__xls-r-300m__{ds}__{task}__L11.json"
+        if f.exists():
+            ta.append(json.loads(f.read_text())["auroc"])
+    sp = pd.DataFrame(_j("speech_agematch.json")["runs"])
+    tg = [c for c in sp.columns if c.startswith("-> ")]
+    def span_of(cohort):
+        g = sp[sp.cohort == cohort].groupby("source")[tg].mean(numeric_only=True)
+        v = g.to_numpy().ravel()
+        v = v[~np.isnan(v)]
+        return f"{v.min():.3f}--{v.max():.3f}"
+    ob = [r for r in _j("objective_function.json")["rows"]
+          if r["cohort"] == "age-matched" and r["features"].startswith("SSL")
+          and r["classifier"].startswith("SVM")][0]
+
+    S = "\\textsuperscript{a}"
+    rows = [
+        ["\\multicolumn{6}{l}{\\emph{Design A, five-seed run: field protocol (897 PD / 3{,}912 HC) "
+         "and age-matched (562 / 562)}} \\\\[-0.2em]%", "", "", "", "", ""],
+        ["Within mPower, field protocol", pm(ls["baseline"]["within"]), "24", "MLP head", "5",
+         "\\S\\ref{subsec:diagnosis}"],
+        ["mPower $\\rightarrow$ IPVS / NeuroVoz / MDVR-KCL, field", ext("baseline"), "15",
+         "MLP head", "5", "\\S\\ref{subsec:diagnosis}"],
+        ["Within mPower, age-matched", pm(ls["agematched"]["within"]), "24", "MLP head", "5",
+         "\\S\\ref{subsec:diagnosis}"],
+        ["mPower $\\rightarrow$ IPVS / NeuroVoz / MDVR-KCL, age-matched" + S,
+         ext("agematched"), "15", "MLP head", "5", "\\S\\ref{subsec:diagnosis}"],
+        ["Within minus mean transfer, field $\\rightarrow$ age-matched",
+         f"{gap('baseline'):.1f} $\\rightarrow$ {gap('agematched'):.1f} pp", "24 vs 15",
+         "MLP head", "5", "\\S\\ref{subsec:diagnosis}"],
+        ["\\midrule \\multicolumn{6}{l}{\\emph{Classifier comparison, one recording per "
+         "participant (field $\\rightarrow$ age-matched)}} \\\\[-0.2em]%", "", "", "", "", ""],
+        ["Age alone", f"{best[('confounded', 'age only (1)')]:.3f} $\\rightarrow$ "
+         f"{best[('age-matched', 'age only (1)')]:.3f}", "--",
+         f"best of 5 (logistic: {lr[('age-matched', 'age only (1)')]:.3f})", "1",
+         "Table~\\ref{tab:protocol}"],
+        ["SSL embeddings", f"{best[('confounded', 'SSL embeddings (2048)')]:.3f} $\\rightarrow$ "
+         f"{best[('age-matched', 'SSL embeddings (2048)')]:.3f}", "15",
+         f"best of 5 (MLP: {mlp[('confounded', 'SSL embeddings (2048)')]:.3f} $\\rightarrow$ "
+         f"{mlp[('age-matched', 'SSL embeddings (2048)')]:.3f})", "1", "Table~\\ref{tab:protocol}"],
+        ["Classical acoustic (42)", f"{best[('confounded', 'classical (42)')]:.3f} $\\rightarrow$ "
+         f"{best[('age-matched', 'classical (42)')]:.3f}", "--", "best of 5", "1",
+         "Table~\\ref{tab:protocol}"],
+        ["\\midrule \\multicolumn{6}{l}{\\emph{Layer and encoder selection (age-matched cohort)}}"
+         " \\\\[-0.2em]%", "", "", "", "", ""],
+        ["XLS-R layer chosen by cross-validation", f"L{sel['best_layer']}: {sel['best_auroc']:.3f}",
+         "all 25", "MLP head", "1", "\\S\\ref{sec:encoder}"],
+        ["Five encoders, best layer each (XLS-R: L"
+         f"{sweep['xls-r-300m']['best_layer']})", f"{min(span):.3f}--{max(span):.3f}", "all",
+         "linear probe", "1", "Table~\\ref{tab:encoders-matched}"],
+        ["\\midrule \\multicolumn{6}{l}{\\emph{Locked transfer at the cross-validated layer "
+         "(field protocol)}} \\\\[-0.2em]%", "", "", "", "", ""],
+        ["Within mPower", f"{l11:.3f}", "11", "MLP head", "1", "\\S\\ref{sec:encoder}"],
+        ["mPower $\\rightarrow$ six external corpus/task pairs", f"{min(ta):.3f}--{max(ta):.3f}",
+         "11", "MLP head", "1", "Table~\\ref{tab:transfer-a}"],
+        ["\\midrule \\multicolumn{6}{l}{\\emph{Design B: a new head trained on connected speech "
+         "of one clinical corpus}} \\\\[-0.2em]%", "", "", "", "", ""],
+        ["Transfer between clinical corpora, unmatched", span_of("full"), "15", "MLP head", "5",
+         "Table~\\ref{tab:transfer-b}"],
+        ["Transfer between clinical corpora, age-matched", span_of("age-matched"), "15",
+         "MLP head", "5", "Table~\\ref{tab:agecontrol}"],
+        ["\\midrule \\multicolumn{6}{l}{\\emph{Clinical utility}} \\\\[-0.2em]%",
+         "", "", "", "", ""],
+        ["Net benefit at $p_t = 0.10$, model vs screen all" + "\\textsuperscript{b}",
+         f"{ob['NB_at_target_prev']:.5f} vs {ob['NB_all_at_target_prev']:.5f}", "15", "SVM",
+         "1", "\\S\\ref{sec:evaluation}"],
+    ]
+    # rows that open a block carry their own line ending; drop the padding cells
+    body_rows = []
+    for r in rows:
+        if r[0].rstrip().endswith("%"):
+            body_rows.append(r[0][:-1])
+        else:
+            body_rows.append(" & ".join(r) + " \\\\")
+    header = ("\\begin{tabular}{p{4.5cm}p{2.7cm}p{0.95cm}p{2.7cm}p{0.55cm}p{1.6cm}}\n\\toprule\n"
+              "\\textbf{Quantity} & \\textbf{AUROC} & \\textbf{Layer} & \\textbf{Classifier} & "
+              "\\textbf{Seeds} & \\textbf{Where} \\\\\n\\midrule\n")
+    body = header + "\n".join(body_rows) + "\n\\bottomrule\n\\end{tabular}"
+    _w("t4_0_master.tex", "{\\small\\setlength{\\tabcolsep}{4pt}\n" + body + "\n}",
+       "Headline figures of this thesis and the settings that produced each. Figures quoted "
+       "elsewhere refer to this table.",
+       "tab:master",
+       "Field protocol: the uncorrected mPower cohort, capped at three recordings per "
+       "participant (897 with a diagnosis, 3{,}912 without; prevalence 0.187). Age-matched: "
+       "frequency-matched in 5-year bins (562 per group). Layer 24 is the encoder's final "
+       "layer. \\textsuperscript{a}MDVR-KCL records no age, so only the training side is "
+       "matched for that corpus. \\textsuperscript{b}Computed on the age-matched cohort "
+       f"(prevalence 0.5) and re-weighted to the mPower prevalence of 0.187; at this threshold "
+       f"the model flags {ob['TP'] + ob['FP']:,} of {ob['TP'] + ob['FP'] + ob['TN'] + ob['FN']:,} "
+       f"participants (sensitivity {ob['sens']:.2f}, specificity {ob['spec']:.3f}).")
+
+
 def main() -> None:
     warnings.simplefilter("ignore")
     print("Chapter 3:")
@@ -460,7 +591,7 @@ def main() -> None:
     print("Chapter 4:")
     t_encoders_confounded(); t_encoders_matched(); t_protocol(); t_significance()
     t_transfer_a(); t_transfer_b(); t_agecontrol(); t_deviation(); t_probes()
-    t_windowing(); t_classical_transfer()
+    t_windowing(); t_classical_transfer(); t_master()
     n = len(list(OUT.glob("*.tex")))
     print(f"\n{n} tables written to {OUT}")
 

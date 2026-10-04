@@ -262,10 +262,79 @@ def f_agegap() -> None:
     _save(fig, "fig_age_gap")
 
 
+def f_two_designs() -> None:
+    """Figure 4.3: the two transfer designs side by side, drawn from the logged results.
+
+    Replaces the hand-exported Excalidraw diagram, which was never exported; the numbers
+    in the boxes are read from the same logs as Tables 4.5 to 4.7.
+    """
+    from matplotlib.patches import FancyBboxPatch
+
+    ta = []
+    for ds, task in [("neurovoz", "vowel"), ("neurovoz", "ddk"), ("mdvr_kcl", "speech"),
+                     ("ipvs", "vowel"), ("ipvs", "speech"), ("neurovoz", "speech")]:
+        ta.append(_j(f"layer2__xls-r-300m__{ds}__{task}__L11.json")["auroc"])
+    sp = pd.DataFrame(_j("speech_agematch.json")["runs"])
+    tg = [c for c in sp.columns if c.startswith("-> ")]
+
+    def span(cohort):
+        v = sp[sp.cohort == cohort].groupby("source")[tg].mean(numeric_only=True).to_numpy()
+        v = v[~np.isnan(v)]
+        return v.min(), v.max()
+
+    fl, fh = span("full")
+    ml, mh = span("age-matched")
+    fills = {"data": "#DCE6F2", "train": "#F6DDE4", "target": "#EDEDED",
+             "bad": "#F4CCCC", "mixed": "#FFF2CC"}
+
+    with plt.rc_context({"axes.grid": False, "figure.autolayout": False}):
+        fig, ax = plt.subplots(figsize=(7.2, 5.6))
+        ax.set_xlim(0, 10)
+        ax.set_ylim(0, 10.6)
+        ax.axis("off")
+
+        def box(x, y, text, kind, w=4.0, h=1.45):
+            ax.add_patch(FancyBboxPatch((x, y), w, h, boxstyle="round,pad=0.04,rounding_size=0.18",
+                                        fc=fills[kind], ec="#444444", lw=0.9))
+            ax.text(x + w / 2, y + h / 2, text, ha="center", va="center", fontsize=9.5,
+                    linespacing=1.35)
+
+        def arrow(x, y0, y1):
+            ax.annotate("", xy=(x, y1), xytext=(x, y0),
+                        arrowprops=dict(arrowstyle="-|>", lw=1.0, color="#444444"))
+
+        for x0, title in ((0.3, "Design A: the proposed system"),
+                          (5.7, "Design B: a separate observation")):
+            ax.text(x0 + 2.0, 10.25, title, ha="center", va="center", fontsize=10.5,
+                    fontweight="bold")
+        ys = [8.35, 6.05, 3.75, 1.45]
+        a = ["mPower sustained vowels\nself-reported labels",
+             "train the head, then lock\ncalibration and threshold",
+             "NeuroVoz, IPVS, MDVR-KCL\nvowel, DDK and speech",
+             f"AUROC {min(ta):.3f} to {max(ta):.3f}\nthree of six runs inverted"]
+        b = ["one clinical corpus\nconnected speech\nclinician labels",
+             "a fresh head on the\nsame frozen encoder",
+             "the other clinical corpora\nconnected speech",
+             f"unmatched {fl:.3f} to {fh:.3f}\nage-matched {ml:.3f} to {mh:.3f}"]
+        kinds_a = ["data", "train", "target", "bad"]
+        kinds_b = ["data", "train", "target", "mixed"]
+        for x, texts, kinds in ((0.3, a, kinds_a), (5.7, b, kinds_b)):
+            for y, t, k in zip(ys, texts, kinds):
+                box(x, y, t, k)
+            for y0, y1 in zip(ys[:-1], ys[1:]):
+                arrow(x + 2.0, y0, y1 + 1.45)
+        ax.text(5.0, 0.55,
+                "The encoder is the same frozen model in both designs. Design B trains a new head "
+                "from random\ninitialisation, on a different task, corpus and label source, so it "
+                "does not repair design A.",
+                ha="center", va="center", fontsize=8.5, style="italic", color="#333333")
+        _save(fig, "fig4_3_two_designs")
+
+
 def main() -> None:
     warnings.simplefilter("ignore")
     f_protocol(); f_depth(); f_labels_vs_age(); f_windowing()
-    f_probes(); f_transfer_b(); f_agegap()
+    f_probes(); f_transfer_b(); f_agegap(); f_two_designs()
     n = len(list(OUT.glob("*.pdf")))
     print(f"\n{n} figures written to {OUT}")
 
