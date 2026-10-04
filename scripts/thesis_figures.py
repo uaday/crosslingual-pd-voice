@@ -6,7 +6,7 @@ hand-made figures in outputs/figures/writeup/ drifted from the artifacts they de
 from outputs/logs/ on demand and written to thesis/figures/.
 
 Diagrams -- the pipeline block diagram and the split/lock schematic -- are NOT here.
-Those are drawn by hand from thesis/diagrams/*.excalidraw.
+Those are drawn by hand and saved as PDF in thesis/figures/.
 
 Run:  .venv\\Scripts\\python.exe scripts\\thesis_figures.py
 """
