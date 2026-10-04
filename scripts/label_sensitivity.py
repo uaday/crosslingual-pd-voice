@@ -41,7 +41,8 @@ import pandas as pd
 import torch
 
 from pdvoice.calibration import select_best_by_brier
-from pdvoice.cohort import age_match_ids, cap_per_subject, subject_age_stats
+from pdvoice.cohort import (age_match_ids, cap_per_subject, demographic_match_ids,
+                            subject_age_stats)
 from pdvoice.config import EMBEDDINGS, LOGS, MPOWER_DIR, VAL_FRACTION
 from pdvoice.data import LOADERS
 from pdvoice.data.splits import assign_folds, train_val_test_indices
@@ -75,19 +76,45 @@ def build_frame():
     has_year = dict(zip(hc, d["diagnosis-year"].notna()))
     key = df["subject_id"].str.replace("mpower_", "", regex=False)
     df["age"] = key.map(age)
+    sex = key.map(dict(zip(hc, d["gender"])))
+    df["sex"] = sex.where(sex.isin(["Male", "Female"]))
     df["has_diag_year"] = key.map(has_year).fillna(False)
     return df
 
 
-def scenario_masks(df, seed):
+def scenario_masks(df, seed, wanted):
     lab = df["label"].astype(int)
-    keep = age_match_ids(df, seed=seed)
-    return {
-        "baseline": pd.Series(True, index=df.index),
-        "confident": ((lab == 1) & df["has_diag_year"]) | ((lab == 0) & ~df["has_diag_year"]),
-        "age50": df["age"] >= 50,
-        "agematched": df["subject_id"].isin(keep),
-    }
+    masks = {}
+    if "baseline" in wanted:
+        masks["baseline"] = pd.Series(True, index=df.index)
+    if "confident" in wanted:
+        masks["confident"] = (((lab == 1) & df["has_diag_year"])
+                              | ((lab == 0) & ~df["has_diag_year"]))
+    if "age50" in wanted:
+        masks["age50"] = df["age"] >= 50
+    if "agematched" in wanted:
+        masks["agematched"] = df["subject_id"].isin(age_match_ids(df, seed=seed))
+    if "agesexmatched" in wanted:
+        # matched jointly within age-bin x sex cells (review point 7)
+        masks["agesexmatched"] = df["subject_id"].isin(
+            demographic_match_ids(df, on=("age", "sex"), seed=seed))
+    return masks
+
+
+def adapt_external(EX, ext_labels, src_hc, mode):
+    """The healthy-control centroid correction of the cross-lingual literature, exactly as
+    layer2_transfer.py implements it: shift (and for hc-standardize, rescale) the target
+    embeddings so their healthy-control statistics match the source's."""
+    if mode == "none":
+        return EX
+    tgt_hc = EX[ext_labels == 0]
+    if len(tgt_hc) == 0:
+        return EX
+    mu_s, mu_t = src_hc.mean(axis=0), tgt_hc.mean(axis=0)
+    if mode == "hc-centroid":
+        return EX - mu_t + mu_s
+    sig_s, sig_t = src_hc.std(axis=0) + 1e-6, tgt_hc.std(axis=0) + 1e-6
+    return (EX - mu_t) / sig_t * sig_s + mu_s
 
 
 def within_auroc(sub, X, y, seed):
@@ -106,16 +133,18 @@ def within_auroc(sub, X, y, seed):
     return auroc(g["y"], g["p"])
 
 
-def transfer_aurocs(sub, X, y, ext_cache, seed):
+def transfer_aurocs(sub, X, y, ext_cache, seed, adapt="none"):
     tr, va = next(GroupShuffleSplit(1, test_size=VAL_FRACTION, random_state=seed)
                   .split(X, y, sub["subject_id"]))
     m, vlog = fit_mlp_head(X[tr], y[tr], X[va], y[va], seed=seed)
     _, cal = select_best_by_brier(vlog, y[va])
     dev = next(m.parameters()).device
+    src_hc = X[tr][y[tr] == 0]
     out = {}
     for ds, edf, EX in ext_cache:
+        EXa = adapt_external(EX, edf["label"].astype(int).to_numpy(), src_hc, adapt)
         with torch.no_grad():
-            lg = m(torch.tensor(EX, dtype=torch.float32, device=dev)).squeeze(-1).cpu().numpy()
+            lg = m(torch.tensor(EXa, dtype=torch.float32, device=dev)).squeeze(-1).cpu().numpy()
         s = pd.DataFrame({"s": edf["subject_id"], "y": edf["label"].astype(int),
                           "p": cal.predict_proba(lg)})
         g = s.groupby("s").agg(y=("y", "first"), p=("p", "mean"))
@@ -126,9 +155,16 @@ def transfer_aurocs(sub, X, y, ext_cache, seed):
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--seeds", default="42,43,44,45,46")
+    ap.add_argument("--scenarios", default="baseline,confident,age50,agematched",
+                    help="comma list; also available: agesexmatched")
+    ap.add_argument("--adapt", choices=["none", "hc-centroid", "hc-standardize"],
+                    default="none", help="apply the HC centroid correction to the externals")
+    ap.add_argument("--tag", default="", help="write label_sensitivity__<tag>.json instead "
+                    "of overwriting label_sensitivity.json (which the thesis tables read)")
     args = ap.parse_args()
     warnings.simplefilter("ignore")
     seeds = [int(s) for s in args.seeds.split(",")]
+    wanted = set(args.scenarios.split(","))
 
     df = build_frame()
     Xw, _, _ = load_full(WITHIN_LAYER)
@@ -155,7 +191,7 @@ def main() -> None:
     runs = {}
     for seed in seeds:
         capped = cap_per_subject(df, CAP, seed)
-        for name, mask in scenario_masks(capped, seed).items():
+        for name, mask in scenario_masks(capped, seed, wanted).items():
             sub = capped[mask]
             idx = sub.index.to_numpy()
             assert np.array_equal(df.label.to_numpy()[idx], sub.label.to_numpy()), \
@@ -166,7 +202,7 @@ def main() -> None:
             if npd < 10 or nhc < 10:
                 continue
             w = within_auroc(sub, Xw[idx], y, seed)
-            t = transfer_aurocs(sub, Xt[idx], y, ext_cache, seed)
+            t = transfer_aurocs(sub, Xt[idx], y, ext_cache, seed, args.adapt)
             runs.setdefault(name, []).append(
                 {"seed": seed, "n_pd": int(npd), "n_hc": int(nhc),
                  "within": round(float(w), 4),
@@ -188,9 +224,10 @@ def main() -> None:
     print(summary.to_string(index=False))
 
     print(f"\n{'='*88}\nREADING\n{'='*88}")
-    b = np.array([r["within"] for r in runs["baseline"]]).mean()
-    for n in ("confident", "age50", "agematched"):
-        if n not in runs:
+    b = (np.array([r["within"] for r in runs["baseline"]]).mean()
+         if "baseline" in runs else np.nan)
+    for n in ("confident", "age50", "agematched", "agesexmatched"):
+        if n not in runs or "baseline" not in runs:
             continue
         w = np.array([r["within"] for r in runs[n]]).mean()
         gains = [np.array([r[f"transfer_{d}"] for r in runs[n]]).mean()
@@ -205,9 +242,10 @@ def main() -> None:
            "transfer_layer": TRANSFER_LAYER, "seeds": seeds,
            "age_pd": ages["age_pd"], "age_hc": ages["age_hc"],
            "age_gap": ages["age_gap"], "age_level": ages["age_level"],
-           "runs": runs, "summary": rows}
-    (LOGS / "label_sensitivity.json").write_text(json.dumps(out, indent=2))
-    print(f"\nwrote {LOGS / 'label_sensitivity.json'}")
+           "adapt": args.adapt, "runs": runs, "summary": rows}
+    name = f"label_sensitivity__{args.tag}.json" if args.tag else "label_sensitivity.json"
+    (LOGS / name).write_text(json.dumps(out, indent=2))
+    print(f"\nwrote {LOGS / name}")
 
 
 if __name__ == "__main__":

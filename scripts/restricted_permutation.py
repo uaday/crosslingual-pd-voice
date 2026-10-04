@@ -1,0 +1,108 @@
+"""Restricted permutation test for the age confound (review point 7; Chaibub Neto et al. 2019).
+
+An ordinary permutation test shuffles the labels freely, which destroys the association
+between age and diagnosis along with everything else. A model that has only learned age then
+beats the null easily. A RESTRICTED permutation shuffles labels only within strata of the
+measured confounder (here 5-year age bins, and age-bin x sex cells), so every permuted
+dataset keeps the original age-diagnosis association. The null distribution is then "what
+this pipeline scores when it can use age but nothing else", and the observed score is
+compared with it.
+
+Pipeline (refitted for every permutation): one recording per participant from the
+uncorrected mPower cohort, XLS-R layer 15 mean+std embeddings, PCA to 64 dimensions inside
+each training fold, logistic regression, 5-fold participant-disjoint cross-validation.
+A linear probe is used so that hundreds of refits are affordable; the observed score is
+reported for the same probe.
+
+Run:  .venv\\Scripts\\python.exe -u scripts\\restricted_permutation.py --n-perm 200
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import warnings
+
+import numpy as np
+import pandas as pd
+from sklearn.decomposition import PCA
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import roc_auc_score
+from sklearn.model_selection import StratifiedKFold
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
+
+from pdvoice.cohort import attach_sex, load_mpower_cohort
+from pdvoice.config import EMBEDDINGS, LOGS
+
+MODEL, LAYER = "xls-r-300m", 15
+
+
+def cv_auroc(X, y, seed):
+    oof = np.zeros(len(y))
+    for tr, te in StratifiedKFold(5, shuffle=True, random_state=seed).split(X, y):
+        clf = make_pipeline(StandardScaler(), PCA(64, random_state=seed),
+                            LogisticRegression(max_iter=2000))
+        oof[te] = clf.fit(X[tr], y[tr]).predict_proba(X[te])[:, 1]
+    return roc_auc_score(y, oof)
+
+
+def permute_within(y, strata, rng):
+    yp = y.copy()
+    for s in np.unique(strata):
+        idx = np.flatnonzero(strata == s)
+        yp[idx] = rng.permutation(y[idx])
+    return yp
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--n-perm", type=int, default=200)
+    ap.add_argument("--seed", type=int, default=42)
+    args = ap.parse_args()
+    warnings.simplefilter("ignore")
+
+    d = np.load(EMBEDDINGS / f"mpower_full__{MODEL}__L{LAYER}.npz", allow_pickle=True)
+    emb = pd.DataFrame({"subject_id": d["subject_id"].astype(str)})
+    emb["row"] = np.arange(len(emb))
+    df = load_mpower_cohort(cap=1, seed=args.seed)
+    df = attach_sex(df).merge(emb.drop_duplicates("subject_id"), on="subject_id", how="inner")
+    df = df.dropna(subset=["age"]).reset_index(drop=True)
+    X = d["X"][df.row.to_numpy()].astype(np.float32)
+    y = df.label.to_numpy().astype(int)
+    age_bin = (df.age // 5 * 5).astype(int).to_numpy()
+    sex = df.sex.fillna("unknown").to_numpy()
+    print(f"{len(df):,} participants (PD {y.sum():,} / HC {(y == 0).sum():,})")
+
+    observed = cv_auroc(X, y, args.seed)
+    age_only = roc_auc_score(y, df.age.to_numpy())
+    print(f"observed AUROC (PCA-64 logistic probe): {observed:.3f} | age alone: {age_only:.3f}")
+
+    rng = np.random.default_rng(args.seed)
+    nulls = {"unrestricted": [], "within_age_bins": [], "within_age_x_sex": []}
+    strata = {"unrestricted": np.zeros(len(y), int), "within_age_bins": age_bin,
+              "within_age_x_sex": np.array([f"{a}_{s}" for a, s in zip(age_bin, sex)])}
+    for i in range(args.n_perm):
+        for k in nulls:
+            nulls[k].append(cv_auroc(X, permute_within(y, strata[k], rng), args.seed + i + 1))
+        if (i + 1) % 20 == 0:
+            print(f"  {i + 1}/{args.n_perm}: " + "  ".join(
+                f"{k} mean {np.mean(v):.3f}" for k, v in nulls.items()), flush=True)
+
+    res = {"n": int(len(y)), "observed": round(float(observed), 4),
+           "age_alone": round(float(age_only), 4), "n_perm": args.n_perm}
+    for k, v in nulls.items():
+        v = np.asarray(v)
+        res[k] = dict(null_mean=round(float(v.mean()), 4), null_sd=round(float(v.std()), 4),
+                      null_95th=round(float(np.quantile(v, 0.95)), 4),
+                      p_value=round(float((np.sum(v >= observed) + 1) / (len(v) + 1)), 4),
+                      excess_over_null=round(float(observed - v.mean()), 4))
+        print(f"{k:<18} null {v.mean():.3f} +/- {v.std():.3f} (95th {np.quantile(v, .95):.3f}) "
+              f"-> observed {observed:.3f}, excess {observed - v.mean():+.3f}, "
+              f"p = {res[k]['p_value']}")
+    (LOGS / "restricted_permutation.json").write_text(json.dumps(res, indent=2))
+    print(f"wrote {LOGS / 'restricted_permutation.json'}")
+
+
+if __name__ == "__main__":
+    main()
