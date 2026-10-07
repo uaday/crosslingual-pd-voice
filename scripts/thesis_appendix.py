@@ -77,12 +77,12 @@ def a_transfer():
     n_inv = sum(r[3].startswith("\\textbf") for r in rows)
     return longtable(
         "p{2.4cm}p{3.0cm}rp{2.9cm}rrrr",
-        ["Corpus / task", "Configuration", "PD/HC", "AUROC [95\\% CI]", "AUPRC", "ECE", "Brier",
+        ["Dataset / task", "Configuration", "PD/HC", "AUROC [95\\% CI]", "AUPRC", "ECE", "Brier",
          "Sens."],
         rows,
         f"All {len(rows)} locked transfer runs of design A. The model is trained on mPower "
         "sustained vowels (uncorrected cohort, three recordings per participant) and applied "
-        "unchanged to each external corpus.",
+        "unchanged to each external dataset.",
         "tab:appA-transfer",
         f"Bold: the whole confidence interval lies below 0.5 ({n_inv} of {len(rows)} runs). "
         "Sens.: sensitivity at a specificity of at least 0.90. L24 is the final layer. HC "
@@ -166,7 +166,7 @@ def a_speech():
                      ["Direction", "Unmatched", "Age-matched", "Size-matched random"], rows,
                      "Connected-speech transfer of design B by direction, mean $\\pm$ SD over "
                      "five seeds, layer 15.", "tab:appA-speech",
-                     "MDVR-KCL has no age data, so it cannot be age-matched as a training corpus.")
+                     "MDVR-KCL has no age data, so it cannot be age-matched as a training dataset.")
 
 
 def a_classifiers():
