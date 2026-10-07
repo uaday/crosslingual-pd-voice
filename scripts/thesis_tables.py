@@ -74,7 +74,7 @@ def t_datasets() -> None:
        "control and capping.",
        "tab:datasets",
        "mPower contains a further 2{,}129 recordings with no diagnosis label, which are "
-       "excluded. Two English corpora are used so that a change of language can be "
+       "excluded. Two English datasets are used so that a change of language can be "
        "separated from a change of dataset.")
 
 
@@ -90,7 +90,7 @@ def t_demographics() -> None:
             rows, "lrrrrr"),
        "Subject-level age and sex coverage by dataset.",
        "tab:demographics",
-       "The external corpora are confounded as well: IPVS carries a 20.5-year gap of its "
+       "The external datasets are confounded as well: IPVS carries a 20.5-year gap of its "
        "own. MDVR-KCL has no age data at all and therefore cannot be age-corrected under "
        "any analysis. No external loader exposes participant sex.")
 
@@ -104,7 +104,7 @@ def t_prevalence() -> None:
        _tab(["Dataset", "PD", "HC", "Prevalence"], rows, "lrrr"),
        "Class balance at subject level. Prevalence is the chance level for AUPRC.",
        "tab:prevalence",
-       "AUPRC is not comparable across these corpora without its prevalence beside it: "
+       "AUPRC is not comparable across these datasets without its prevalence beside it: "
        "chance is 0.187 at home and 0.43--0.49 abroad. At a prevalence of 0.187 a constant "
        "\\emph{healthy} prediction scores 81\\% accuracy, which is why accuracy is not "
        "reported in this thesis.")
@@ -260,9 +260,9 @@ def t_transfer_a() -> None:
         inv = "\\textbf{yes}" if hi < 0.5 else "--"
         rows.append([label, str(n), f"{a:.3f}", f"[{lo:.3f}, {hi:.3f}]", inv])
     _w("t4_5_transfer_a.tex",
-       _tab(["Target corpus / task", "$n$", "AUROC", "95\\% CI", "Inverted"], rows,
+       _tab(["Target dataset / task", "$n$", "AUROC", "95\\% CI", "Inverted"], rows,
             "lrrrc"),
-       "Transfer of the locked mPower-trained model to each external corpus, at layer 11.",
+       "Transfer of the locked mPower-trained model to each external dataset, at layer 11.",
        "tab:transfer-a",
        "The within-mPower ceiling at this layer is 0.779. \\emph{Inverted} marks results "
        "whose entire confidence interval lies below 0.500, meaning the model ranks "
@@ -285,11 +285,11 @@ def t_transfer_b() -> None:
     _w("t4_6_transfer_b.tex",
        _tab(["Trained on", "Within"] + [f"$\\rightarrow$ {names[t[3:]]}" for t in tg],
             rows, "lrrrr"),
-       "Transfer between external corpora when a new head is trained on connected speech, "
+       "Transfer between external datasets when a new head is trained on connected speech, "
        "averaged over five seeds.",
        "tab:transfer-b",
        "The encoder is the same frozen model used throughout; only the head is retrained. "
-       "Every direction transfers at 0.665--0.850 against within-corpus scores of "
+       "Every direction transfers at 0.665--0.850 against within-dataset scores of "
        "0.841--0.972.")
 
 
@@ -365,7 +365,7 @@ def t_probes() -> None:
              "language (3-way)", "age, young(<35) vs older(>=55)", "** PD diagnosis **",
              "recording device (4-way)"]
     label = {"task (vowel vs speech)": "Elicitation task", "sex": "Speaker sex",
-             "corpus identity (3-way)": "Corpus identity",
+             "corpus identity (3-way)": "Dataset identity",
              "language (3-way)": "Language",
              "age, young(<35) vs older(>=55)": "Age band",
              "** PD diagnosis **": "\\textbf{Parkinson's diagnosis}",
@@ -382,7 +382,7 @@ def t_probes() -> None:
        "Linear probes applied to the frozen embeddings, subject-disjoint.",
        "tab:probes",
        "The diagnosis is the weakest of the attributes recovered, below elicitation task, "
-       "speaker sex, corpus identity, language and age band, and the value shown is "
+       "speaker sex, dataset identity, language and age band, and the value shown is "
        "measured on the confounded cohort. Recording device is recovered at little above "
        "chance, which indicates the probes are not simply detecting everything.")
 
@@ -408,7 +408,7 @@ def t_windowing() -> None:
                 cells += [f"{a:.3f}", f"{b:.3f}", f"{b - a:+.3f}"]
         rows.append([f"{names[ds]} / {task}"] + cells)
     _w("t4_10_windowing.tex",
-       _tab(["Corpus / task", "L11 core", "L11 full", "$\\Delta$",
+       _tab(["Dataset / task", "L11 core", "L11 full", "$\\Delta$",
              "L15 core", "L15 full", "$\\Delta$"], rows, "lrrrrrr"),
        "Effect of replacing the fixed analysis window with the whole recording, at two "
        "layers.",
@@ -422,7 +422,7 @@ def t_windowing() -> None:
 
 
 def t_classical_transfer() -> None:
-    """Both feature families, both cohorts, the same two vowel corpora."""
+    """Both feature families, both cohorts, the same two vowel datasets."""
     cl = _j("classical_transfer__cap3.json")
 
     def ssl(ds, layer=11):
@@ -455,14 +455,14 @@ def t_classical_transfer() -> None:
     _w("t4_11_classical_transfer.tex",
        _tab(["Cohort", "Evaluated on", "Classical (42)", "SSL (2048)"], rows, "llrr"),
        "Transfer of both feature families through the identical locked protocol, on the "
-       "two vowel corpora.",
+       "two vowel datasets.",
        "tab:classical-transfer",
        "The classical branch uses the same head, the same calibrator selection and the "
        "same locked threshold as the self-supervised branch; imputation and scaling are "
        "fitted on mPower alone and reused unchanged. The SSL column is layer 11. Values "
        "in bold have their entire 95\% confidence interval below 0.500. Neither family "
        "transfers, and the IPVS inversion occurs for both, so it is not a property of the "
-       "encoder. Only vowel corpora are eligible, because the descriptors assume "
+       "encoder. Only vowel datasets are eligible, because the descriptors assume "
        "sustained phonation.")
 
 
@@ -575,13 +575,13 @@ def t_master() -> None:
         ["\\midrule \\multicolumn{6}{l}{\\emph{Locked transfer at the cross-validated layer "
          "(field protocol)}} \\\\[-0.2em]%", "", "", "", "", ""],
         ["Within mPower", f"{l11:.3f}", "11", "MLP head", "1", "\\S\\ref{sec:encoder}"],
-        ["mPower $\\rightarrow$ six external corpus/task pairs", f"{min(ta):.3f}--{max(ta):.3f}",
+        ["mPower $\\rightarrow$ six external dataset/task pairs", f"{min(ta):.3f}--{max(ta):.3f}",
          "11", "MLP head", "1", "Table~\\ref{tab:transfer-a}"],
         ["\\midrule \\multicolumn{6}{l}{\\emph{Design B: a new head trained on connected speech "
-         "of one clinical corpus}} \\\\[-0.2em]%", "", "", "", "", ""],
-        ["Transfer between clinical corpora, unmatched", span_of("full"), "15", "MLP head", "5",
+         "of one clinical dataset}} \\\\[-0.2em]%", "", "", "", "", ""],
+        ["Transfer between clinical datasets, unmatched", span_of("full"), "15", "MLP head", "5",
          "Table~\\ref{tab:transfer-b}"],
-        ["Transfer between clinical corpora, age-matched", span_of("age-matched"), "15",
+        ["Transfer between clinical datasets, age-matched", span_of("age-matched"), "15",
          "MLP head", "5", "Table~\\ref{tab:agecontrol}"],
         ["\\midrule \\multicolumn{6}{l}{\\emph{Clinical utility}} \\\\[-0.2em]%",
          "", "", "", "", ""],
@@ -612,7 +612,7 @@ def t_master() -> None:
        "participant (897 with a diagnosis, 3{,}912 without; prevalence 0.187). Age-matched: "
        "frequency-matched in 5-year bins (562 per group). Layer 24 is the encoder's final "
        "layer. \\textsuperscript{a}MDVR-KCL records no age, so only the training side is "
-       "matched for that corpus. \\textsuperscript{b}Computed on the age-matched cohort "
+       "matched for that dataset. \\textsuperscript{b}Computed on the age-matched cohort "
        f"(prevalence 0.5) and re-weighted to the mPower prevalence of 0.187; at this threshold "
        f"the model flags {ob['TP'] + ob['FP']:,} of {ob['TP'] + ob['FP'] + ob['TN'] + ob['FN']:,} "
        f"participants (sensitivity {ob['sens']:.2f}, specificity {ob['spec']:.3f}). "

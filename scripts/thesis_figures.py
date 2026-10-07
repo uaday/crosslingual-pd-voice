@@ -187,7 +187,7 @@ def f_probes() -> None:
     """What the frozen embedding encodes -- the diagnosis ranks last."""
     d = _j("embedding_probes.json")
     want = {"task (vowel vs speech)": "Elicitation task", "sex": "Speaker sex",
-            "corpus identity (3-way)": "Corpus identity", "language (3-way)": "Language",
+            "corpus identity (3-way)": "Dataset identity", "language (3-way)": "Language",
             "age, young(<35) vs older(>=55)": "Age band",
             "** PD diagnosis **": "Parkinson's diagnosis",
             "recording device (4-way)": "Recording device"}
@@ -312,9 +312,9 @@ def f_two_designs() -> None:
              "train the head, then lock\ncalibration and threshold",
              "NeuroVoz, IPVS, MDVR-KCL\nvowel, DDK and speech",
              f"AUROC {min(ta):.3f} to {max(ta):.3f}\nthree of six runs inverted"]
-        b = ["one clinical corpus\nconnected speech\nclinician labels",
+        b = ["one clinical dataset\nconnected speech\nclinician labels",
              "a fresh head on the\nsame frozen encoder",
-             "the other clinical corpora\nconnected speech",
+             "the other clinical datasets\nconnected speech",
              f"unmatched {fl:.3f} to {fh:.3f}\nage-matched {ml:.3f} to {mh:.3f}"]
         kinds_a = ["data", "train", "target", "bad"]
         kinds_b = ["data", "train", "target", "mixed"]
@@ -325,7 +325,7 @@ def f_two_designs() -> None:
                 arrow(x + 2.0, y0, y1 + 1.45)
         ax.text(5.0, 0.55,
                 "The encoder is the same frozen model in both designs. Design B trains a new head "
-                "from random\ninitialisation, on a different task, corpus and label source, so it "
+                "from random\ninitialisation, on a different task, dataset and label source, so it "
                 "does not repair design A.",
                 ha="center", va="center", fontsize=8.5, style="italic", color="#333333")
         _save(fig, "fig4_3_two_designs")
