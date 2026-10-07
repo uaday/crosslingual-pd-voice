@@ -556,14 +556,14 @@ def t_master() -> None:
         ["Age alone", f"{best[('confounded', 'age only (1)')]:.3f} $\\rightarrow$ "
          f"{best[('age-matched', 'age only (1)')]:.3f}", "--",
          f"best of 5 (logistic: {lr[('age-matched', 'age only (1)')]:.3f})", "1",
-         "Table~\\ref{tab:protocol}"],
+         "Table~\\ref{tab:baselines}"],
         ["SSL embeddings", f"{best[('confounded', 'SSL embeddings (2048)')]:.3f} $\\rightarrow$ "
          f"{best[('age-matched', 'SSL embeddings (2048)')]:.3f}", "15",
          f"best of 5 (MLP: {mlp[('confounded', 'SSL embeddings (2048)')]:.3f} $\\rightarrow$ "
-         f"{mlp[('age-matched', 'SSL embeddings (2048)')]:.3f})", "1", "Table~\\ref{tab:protocol}"],
+         f"{mlp[('age-matched', 'SSL embeddings (2048)')]:.3f})", "1", "Table~\\ref{tab:baselines}"],
         ["Classical acoustic (42)", f"{best[('confounded', 'classical (42)')]:.3f} $\\rightarrow$ "
          f"{best[('age-matched', 'classical (42)')]:.3f}", "--", "best of 5", "1",
-         "Table~\\ref{tab:protocol}"],
+         "Table~\\ref{tab:baselines}"],
         ["\\midrule \\multicolumn{6}{l}{\\emph{Layer and encoder selection (age-matched cohort)}}"
          " \\\\[-0.2em]%", "", "", "", "", ""],
         ["XLS-R layer chosen by cross-validation", f"L{sel['best_layer']}: {sel['best_auroc']:.3f}",
@@ -598,11 +598,11 @@ def t_master() -> None:
             body_rows.append(r[0][:-1])
         else:
             body_rows.append(" & ".join(r) + " \\\\")
-    header = ("\\begin{tabular}{p{4.5cm}p{2.7cm}p{0.95cm}p{2.7cm}p{0.55cm}p{1.6cm}}\n\\toprule\n"
+    header = ("\\begin{tabularx}{\\linewidth}{Lp{2.5cm}cp{2.4cm}cl}\n\\toprule\n"
               "\\textbf{Quantity} & \\textbf{AUROC} & \\textbf{Layer} & \\textbf{Classifier} & "
               "\\textbf{Seeds} & \\textbf{Where} \\\\\n\\midrule\n")
-    body = header + "\n".join(body_rows) + "\n\\bottomrule\n\\end{tabular}"
-    _w("t4_0_master.tex", "{\\small\\setlength{\\tabcolsep}{4pt}\n" + body + "\n}",
+    body = header + "\n".join(body_rows) + "\n\\bottomrule\n\\end{tabularx}"
+    _w("t4_0_master.tex", "{\\footnotesize\\setlength{\\tabcolsep}{3pt}\n" + body + "\n}",
        "Headline figures of this thesis and the settings that produced each. Figures quoted "
        "elsewhere refer to this table.",
        "tab:master",
@@ -624,7 +624,9 @@ def main() -> None:
     print("Chapter 3:")
     t_datasets(); t_demographics(); t_prevalence(); t_baselines()
     print("Chapter 4:")
-    t_encoders_confounded(); t_encoders_matched(); t_protocol(); t_significance()
+    t_encoders_confounded(); t_encoders_matched(); t_significance()
+    # t_protocol() is not called: its table duplicated Table 3.4 (t3_4_baselines) and was
+    # never included in the thesis.
     t_transfer_a(); t_transfer_b(); t_agecontrol(); t_deviation(); t_probes()
     t_windowing(); t_classical_transfer(); t_master()
     n = len(list(OUT.glob("*.tex")))
