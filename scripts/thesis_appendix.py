@@ -298,6 +298,9 @@ SAMPLES = [
     ("Cohort construction", "Recording cap and frequency matching on age, or on age and sex "
      "(Equation~\\ref{eq:agematch}).",
      "cohort.py", ["cap_per_subject", "demographic_match_ids"]),
+    ("Bridge2AI participant groups", "How Bridge2AI participants are assigned to Parkinson's "
+     "disease, healthy control or another disorder (Section~\\ref{subsec:bridge2ai}).",
+     "data/bridge2ai.py", ["bridge2ai_participants"]),
     ("Participant-disjoint splits", "Folds that never place one participant in two partitions.",
      "data/splits.py", ["assign_folds", "train_val_test_indices", "assert_disjoint"]),
     ("Classifier head", "The 256-unit head of Equation~\\ref{eq:head} and its training loop.",
@@ -324,8 +327,12 @@ def appendix_b():
     for title, desc, rel, names in SAMPLES:
         if title:
             parts += [f"\\section{{{title}}}", desc, ""]
-        parts += [f"\\noindent\\texttt{{src/pdvoice/{rel.replace('_', chr(92) + '_')}}}",
-                  "\\begin{lstlisting}", source_of(rel, names), "\\end{lstlisting}", ""]
+        # \needspace stops a listing from starting in the last few lines of a page; the
+        # listing itself breaks across pages normally.
+        path = f"src/pdvoice/{rel}".replace("_", "\\_")
+        parts += ["\\needspace{8\\baselineskip}",
+                  f"\\begin{{lstlisting}}[title={{\\texttt{{{path}}}}}]",
+                  source_of(rel, names), "\\end{lstlisting}", ""]
     (THESIS / "appendix_b_code.tex").write_text("\n".join(parts), encoding="utf-8")
 
 
