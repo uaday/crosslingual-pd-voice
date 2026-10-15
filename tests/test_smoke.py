@@ -125,3 +125,30 @@ def test_mdvr_kcl_loader():
     df = load_mdvr_kcl()
     assert len(df) > 0
     assert (df["task_kind"] == "speech").all()  # KCL is speech-only
+
+
+def test_bridge2ai_task_codes():
+    from pdvoice.data.bridge2ai import _task_code, _task_kind
+
+    assert _task_code("maximum-phonation-time-2") == "maximum-phonation-time"
+    assert _task_code("harvard-sentences-list-65-1") == "harvard-sentences-list"
+    assert _task_code("picture-description-option1") == "picture-description"
+    assert _task_code("story-recall-v2") == "story-recall"
+    assert _task_kind("prolonged-vowel") == "vowel"
+    assert _task_kind("diadochokinesis-pataka") == "ddk"
+    assert _task_kind("rainbow-passage") == "speech"
+    assert _task_kind("respiration-and-cough-cough") == "other"
+
+
+@pytest.mark.skipif(not (config.BRIDGE2AI_DIR / "phenotype").exists(),
+                    reason="Bridge2AI data not present")
+def test_bridge2ai_loader():
+    from pdvoice.data.bridge2ai import bridge2ai_participants, load_bridge2ai
+
+    p = bridge2ai_participants()
+    assert p.participant_id.is_unique
+    assert set(p.group) <= {"pd", "control", "other", "ambiguous"}
+    assert (p.label.notna() == p.group.isin(["pd", "control"])).all()
+    df = load_bridge2ai()
+    assert len(df) > 0
+    assert set(df["label"].dropna().unique()) <= {0, 1}
