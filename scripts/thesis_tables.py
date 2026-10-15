@@ -62,8 +62,8 @@ def t_datasets() -> None:
         ["NeuroVoz", "Spanish", "2,976", "114", "vowel, speech, DDK", "clinician", "Test"],
         ["IPVS", "Italian", "831", "65", "vowel, speech", "clinician", "Test"],
         ["MDVR-KCL", "English", "73", "37", "speech", "clinician", "Test"],
-        ["Bridge2AI", "English", "--", "--", "vowel, DDK, speech", "clinician",
-         "Access pending"],
+        ["Bridge2AI", "English", "27,408", "767", "vowel, speech, DDK", "clinician",
+         "Training and test"],
     ]
     _w("t3_1_datasets.tex",
        "{\\small\\setlength{\\tabcolsep}{4pt}\n"
@@ -73,8 +73,11 @@ def t_datasets() -> None:
        "control and capping.",
        "tab:datasets",
        "mPower contains a further 2{,}129 recordings with no diagnosis label, which are "
-       "excluded. Two English datasets are used so that a change of language can be "
-       "separated from a change of dataset.")
+       "excluded. Of the 767 Bridge2AI participants, 98 have a clinician-confirmed "
+       "diagnosis of Parkinson's disease and 120 are healthy controls; the rest have other "
+       "voice, neurological, mood or respiratory conditions and are used only in the "
+       "specificity analysis of Section~\\ref{subsec:specificity}. Three English datasets "
+       "are used, so that a change of language can be separated from a change of dataset.")
 
 
 def t_demographics() -> None:
@@ -83,6 +86,7 @@ def t_demographics() -> None:
         ["IPVS", "67.1", "46.6", "\\textbf{+20.5}", "90.4\\%", "--"],
         ["NeuroVoz", "71.1", "64.0", "+7.1", "95.7\\%", "--"],
         ["MDVR-KCL", "--", "--", "--", "\\textbf{0\\%}", "--"],
+        ["Bridge2AI", "72.9", "43.6", "\\textbf{+29.3}", "100\\%", "98.6\\%"],
     ]
     _w("t3_2_demographics.tex",
        _tab(["Dataset", "PD age", "HC age", "Gap (yr)", "Age coverage", "Sex coverage"],
@@ -91,14 +95,16 @@ def t_demographics() -> None:
        "tab:demographics",
        "The external datasets are confounded as well: IPVS carries a 20.5-year gap of its "
        "own. MDVR-KCL has no age data at all and therefore cannot be age-corrected under "
-       "any analysis. No external loader exposes participant sex.")
+       "any analysis. Bridge2AI repeats the mPower gap. Apart from mPower, only Bridge2AI "
+       "records participant sex.")
 
 
 def t_prevalence() -> None:
     rows = [["mPower (3 per participant)", "897", "3,912", "0.187"],
             ["NeuroVoz", "56", "58", "0.491"],
             ["IPVS", "28", "37", "0.431"],
-            ["MDVR-KCL", "16", "21", "0.432"]]
+            ["MDVR-KCL", "16", "21", "0.432"],
+            ["Bridge2AI", "98", "120", "0.450"]]
     _w("t3_3_prevalence.tex",
        _tab(["Dataset", "PD", "HC", "Prevalence"], rows, "lrrr"),
        "Class balance at subject level. Prevalence is the chance level for AUPRC.",
@@ -619,16 +625,178 @@ def t_master() -> None:
        "probability reaches $p_t$; net benefit at prevalence 0.187.")
 
 
+def t_binwidth() -> None:
+    r = pd.DataFrame(_j("age_bin_width.json"))
+    rows = [[d.dataset, f"{d.bin_width}", f"{d.n_per_group:,}", f"{d.age_gap:+.2f}",
+             f"{d.age_only:.3f}", f"{d.voice:.3f} $\\pm$ {d.voice_sd:.3f}"]
+            for d in r.itertuples()]
+    _w("t3_5_binwidth.tex",
+       _tab(["Dataset", "Bin (yr)", "Per group", "Age gap (yr)", "Age alone", "Voice"],
+            rows, "lrrrcc"),
+       "Sensitivity of age matching to the width of the age bins.",
+       "tab:binwidth",
+       "Means over five matching seeds. Age alone is the AUROC of age as the only "
+       "predictor after matching (0.5 means age carries no information about the label). "
+       "Voice is the participant-level AUROC of a linear probe on XLS-R layer 15. mPower: "
+       "sustained vowel, one recording per participant; Bridge2AI: connected speech.")
+
+
+# --------------------------------------------------------------- Bridge2AI (Chapter 4)
+def _pm(m, s):
+    return f"{m:.3f} $\\pm$ {s:.3f}"
+
+
+def t_b2ai_within() -> None:
+    r = _j("bridge2ai_agematch.json")
+    rows = []
+    for task, name in (("vowel", "Sustained vowel"), ("ddk", "Diadochokinesis"),
+                       ("speech", "Connected speech")):
+        u, a, p = r[task]["uncorrected"], r[task]["age_matched"], r[task]["restricted_permutation"]
+        rows.append([name, f"{u['n_pd']} / {u['n_hc']}", f"{u['age_only']:.3f}",
+                     f"{u['voice']:.3f}", f"{a['n_per_group']}", f"{a['age_only']:.3f}",
+                     _pm(a["voice_mean"], a["voice_sd"]),
+                     f"+{p['excess']:.3f} ({p['p_value']:.3f})"])
+    _w("t4_20_b2ai_within.tex",
+       "{\\small\\setlength{\\tabcolsep}{3pt}\n"
+       + _tab(["Task", "PD / HC", "Age alone", "Voice", "Pairs", "Age alone", "Voice",
+               "Above age null ($p$)"], rows, "Lcccccc c") + "\n}",
+       "Parkinson's disease against healthy controls within Bridge2AI, before (columns 2 to "
+       "4) and after (columns 5 to 7) frequency matching on age in five-year bins.",
+       "tab:b2ai-within",
+       "Participant-level AUROC; linear probe on XLS-R layer 15, participant-disjoint 5-fold "
+       "cross-validation. Matched values are the mean and standard deviation over five "
+       "matching seeds. The last column is the margin over a restricted permutation null "
+       "in which labels are shuffled only within five-year age bins (200 permutations, "
+       "full cohort); 0.005 is the smallest attainable $p$.")
+
+
+def t_b2ai_transfer() -> None:
+    a = pd.read_csv(LOGS / "bridge2ai_transfer_agecheck.csv")
+    t = pd.read_csv(LOGS / "bridge2ai_transfer.csv")
+    plan = [("speech", "ipvs", "no young controls", "IPVS speech, elderly controls only"),
+            ("speech", "neurovoz", "age-matched", "NeuroVoz speech, age-matched"),
+            ("speech", "mdvr_kcl", "as published", "MDVR-KCL speech (no age data)"),
+            ("vowel", "ipvs", "as published", "IPVS vowel (age-balanced)"),
+            ("vowel", "neurovoz", "age-matched", "NeuroVoz vowel, age-matched"),
+            ("ddk", "neurovoz", "age-matched", "NeuroVoz DDK, age-matched")]
+    names = {"speech": "Speech", "vowel": "Vowel", "ddk": "DDK"}
+    rows = []
+    for task, tgt, sub, label in plan:
+        g = a[(a.task == task) & (a.target == tgt) & (a.target_subset == sub)]
+        n = g.iloc[0]
+        cell = {s: _pm(*g[g.source == s].auroc.agg(["mean", "std"])) for s in ("uncorrected", "age-matched")}
+        rows.append([f"Bridge2AI {names[task]}", label, f"{int(n.n_pd)} / {int(n.n_hc)}",
+                     cell["uncorrected"], cell["age-matched"]])
+    for direction, task, tgt, label, src in (
+            ("bridge2ai->", "vowel", "mpower", "mPower vowel, age-matched", "Bridge2AI Vowel"),
+            ("mpower->", "vowel", "bridge2ai", "Bridge2AI vowel, age-matched", "mPower Vowel")):
+        g = t[(t.direction == direction) & (t.task == task) & (t.target == tgt)
+              & (t.target_cohort == "age-matched")]
+        cell = {s: _pm(*g[g.source == s].auroc.agg(["mean", "std"])) for s in ("uncorrected", "age-matched")}
+        rows.append([src, label, "--", cell["uncorrected"], cell["age-matched"]])
+    _w("t4_21_b2ai_transfer.tex",
+       "{\\small\\setlength{\\tabcolsep}{4pt}\n"
+       + _tab(["Trained on", "Tested on", "PD / HC", "Source as published",
+               "Source age-matched"], rows, "lLccc") + "\n}",
+       "Locked transfer with Bridge2AI as source and as target, scored on age-comparable "
+       "test sets.",
+       "tab:b2ai-transfer",
+       "Participant-level AUROC, mean and standard deviation over five seeds; locked MLP "
+       "head with calibration chosen on validation data. The IPVS speech test set excludes "
+       "the fifteen young controls; the IPVS vowel set contains none. The two mPower rows "
+       "use the age-matched cohort of Section~\\ref{subsec:diagnosis} and Bridge2AI's own "
+       "age-matched subset, re-drawn for each seed.")
+
+
+def t_b2ai_checks() -> None:
+    f = _j("bridge2ai_followups.json")
+    rows = []
+
+    def tr(d, key):
+        return [_pm(*d[k]) if k in d else "--" for k in key]
+    sp = ["ipvs speech (no young controls)", "neurovoz speech (age-matched)",
+          "mdvr_kcl speech (as published)"]
+    for name, k in (("Read speech, age-matched", "read"), ("Spontaneous speech, age-matched", "spontaneous")):
+        d = f["A_speech_split"][k]
+        rows.append([name, str(d["matched_n_per_group"]), _pm(d["matched_voice"], d["matched_sd"]),
+                     *tr(d["transfer_age_matched_source"], sp)])
+    vw = ["ipvs vowel (as published)", "neurovoz vowel (age-matched)"]
+    for name, k in (("Speech, age and sex matched", "speech"), ("Vowel, age and sex matched", "vowel"),
+                    ("DDK, age and sex matched", "ddk")):
+        d = f["B_age_sex"][k]
+        t = d.get("transfer_age_sex_matched_source", {})
+        cells = tr(t, sp) if k == "speech" else (tr(t, vw) + ["--"] if k == "vowel" else ["--"] * 3)
+        rows.append([name, str(d["matched_n_per_group"]), _pm(d["matched_voice"], d["matched_sd"]), *cells])
+    _w("t4_22_b2ai_checks.tex",
+       "{\\small\\setlength{\\tabcolsep}{3pt}\n"
+       + _tab(["Bridge2AI source", "Pairs", "Within Bridge2AI", "IPVS", "NeuroVoz", "MDVR-KCL"],
+              rows, "Lcccc c") + "\n}",
+       "Two checks on the Bridge2AI result: read against spontaneous speech, and matching on "
+       "age and sex together.",
+       "tab:b2ai-checks",
+       "Participant-level AUROC, mean and standard deviation over five seeds. External "
+       "columns are locked transfer from the matched Bridge2AI cohort to the age-comparable "
+       "test sets of Table~\\ref{tab:b2ai-transfer} (vowel rows: IPVS vowel and NeuroVoz "
+       "vowel, age-matched). DDK has no external target in these columns.")
+
+
+def t_specificity() -> None:
+    c = _j("bridge2ai_followups.json")["C_specificity"]
+    fam = [("all other disorders", "All other disorders"),
+           ("neurological (cognitive impairment, ALS)", "Neurological (cognitive impairment)"),
+           ("voice disorders", "Voice disorders"),
+           ("respiratory", "Respiratory"), ("mood", "Mood")]
+    rows = []
+    for key, name in fam:
+        d = {t: c[t][f"PD vs {key}"] for t in ("vowel", "ddk", "speech")}
+        s = d["speech"]
+        rows.append([name, str(s["n_neg"]), f"{s['age_neg']:.1f}", str(s["matched_n_per_group"]),
+                     *[_pm(d[t]["matched_voice"], d[t]["matched_sd"]) for t in ("vowel", "ddk", "speech")]])
+    _w("t4_23_specificity.tex",
+       "{\\small\\setlength{\\tabcolsep}{3pt}\n"
+       + _tab(["PD against", "$n$", "Age", "Pairs", "Vowel", "DDK", "Speech"], rows,
+              "Lccc ccc") + "\n}",
+       "Separating Parkinson's disease from other disorders within Bridge2AI, after matching "
+       "on age.",
+       "tab:specificity",
+       "A classifier trained directly on each contrast; participant-level AUROC, mean and "
+       "standard deviation over five matching seeds. $n$ and age describe the comparison "
+       "group on the speech task. The mood group "
+       "yields few matched pairs, so its figures are unreliable.")
+
+    conf = {t: c[t]["confusion_PD_vs_control_model"] for t in ("vowel", "ddk", "speech")}
+    order = [("PD vs control", "PD against controls"),
+             ("neurological (cognitive impairment, ALS) vs control", "Cognitive impairment against controls"),
+             ("PD vs neurological (cognitive impairment, ALS)", "PD against cognitive impairment"),
+             ("voice disorders vs control", "Voice disorders against controls"),
+             ("PD vs voice disorders", "PD against voice disorders"),
+             ("all other disorders vs control", "All other disorders against controls"),
+             ("PD vs all other disorders", "PD against all other disorders")]
+    rows = [[name, *[_pm(*conf[t][k]) for t in ("vowel", "ddk", "speech")]] for k, name in order]
+    _w("t4_24_confusion.tex",
+       "{\\small\\setlength{\\tabcolsep}{4pt}\n"
+       + _tab(["Comparison scored by the PD model", "Vowel", "DDK", "Speech"], rows, "Lccc") + "\n}",
+       "How a model trained only to separate Parkinson's disease from age-matched healthy "
+       "controls scores participants with other disorders.",
+       "tab:confusion",
+       "Participant-level AUROC on the model's predicted probability of Parkinson's disease, "
+       "mean and standard deviation over five seeds. Patients and controls are scored out of "
+       "fold; participants with other disorders were never seen in training. A value near "
+       "0.5 for PD against a disorder means the model cannot tell them apart.")
+
+
 def main() -> None:
     warnings.simplefilter("ignore")
     print("Chapter 3:")
-    t_datasets(); t_demographics(); t_prevalence(); t_baselines()
+    t_datasets(); t_demographics(); t_prevalence(); t_baselines(); t_binwidth()
     print("Chapter 4:")
     t_encoders_confounded(); t_encoders_matched(); t_significance()
     # t_protocol() is not called: its table duplicated Table 3.4 (t3_4_baselines) and was
     # never included in the thesis.
     t_transfer_a(); t_transfer_b(); t_agecontrol(); t_deviation(); t_probes()
     t_windowing(); t_classical_transfer(); t_master()
+    print("Bridge2AI:")
+    t_b2ai_within(); t_b2ai_transfer(); t_b2ai_checks(); t_specificity()
     n = len(list(OUT.glob("*.tex")))
     print(f"\n{n} tables written to {OUT}")
 

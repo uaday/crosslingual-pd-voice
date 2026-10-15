@@ -331,10 +331,89 @@ def f_two_designs() -> None:
         _save(fig, "fig4_3_two_designs")
 
 
+def f_experiment_map() -> None:
+    """Which dataset trains, which tests, and under which design: one grid for the reader."""
+    from matplotlib.patches import FancyArrowPatch, FancyBboxPatch
+
+    names = ["mPower", "Bridge2AI", "NeuroVoz", "IPVS", "MDVR-KCL"]
+    sub = ["English, vowel\nself-report", "English, vowel/DDK/speech\nclinician",
+           "Spanish\nclinician", "Italian\nclinician", "English\nclinician"]
+    cells = {  # (row = trained on, col = tested on) -> (code, colour)
+        (0, 0): ("W", "#DDDDDD"), (0, 1): ("D", "#B07AA1"), (0, 2): ("A", "#4E79A7"),
+        (0, 3): ("A", "#4E79A7"), (0, 4): ("A", "#4E79A7"),
+        (1, 0): ("C", "#59A14F"), (1, 1): ("W+S", "#DDDDDD"), (1, 2): ("C", "#59A14F"),
+        (1, 3): ("C", "#59A14F"), (1, 4): ("C", "#59A14F"),
+        (2, 2): ("W", "#DDDDDD"), (2, 3): ("B", "#F28E2B"), (2, 4): ("B", "#F28E2B"),
+        (3, 2): ("B", "#F28E2B"), (3, 3): ("W", "#DDDDDD"), (3, 4): ("B", "#F28E2B"),
+        (4, 2): ("B", "#F28E2B"), (4, 3): ("B", "#F28E2B"), (4, 4): ("W", "#DDDDDD"),
+    }
+    fig = plt.figure(figsize=(7.4, 6.6))
+    fig.set_layout_engine(None)
+
+    # --- top: the locked pipeline every off-diagonal cell uses
+    top = fig.add_axes([0.02, 0.80, 0.96, 0.18]); top.axis("off")
+    top.set_xlim(0, 100); top.set_ylim(0, 20)
+    steps = ["Source dataset\n(row)", "Frozen XLS-R\n(one fixed layer)", "MLP head +\ncalibration",
+             "Lock model\nand threshold", "Target dataset\n(column)"]
+    xs = [1, 21, 41, 61, 81]
+    for i, (x, s) in enumerate(zip(xs, steps)):
+        top.add_patch(FancyBboxPatch((x, 5), 17, 11, boxstyle="round,pad=0.4",
+                                     fc="#F2F2F2" if i not in (3,) else "#FCE8D5", ec="#555555", lw=0.8))
+        top.text(x + 8.5, 10.5, s, ha="center", va="center", fontsize=8)
+        if i < 4:
+            top.add_patch(FancyArrowPatch((x + 17.6, 10.5), (xs[i + 1] - 0.6, 10.5),
+                                          arrowstyle="-|>", mutation_scale=10, color="#333333"))
+    top.text(50, 1.0, "Training data never reach the target; nothing is re-fitted after locking.",
+             ha="center", fontsize=7.5, style="italic", color="#333333")
+
+    # --- grid: rows trained on, columns tested on
+    ax = fig.add_axes([0.25, 0.20, 0.73, 0.55])
+    ax.set_xlim(0, 5); ax.set_ylim(0, 5); ax.invert_yaxis(); ax.grid(False)
+    for s in ax.spines.values():
+        s.set_visible(False)
+    ax.set_xticks([]); ax.set_yticks([])
+    for r in range(5):
+        for c in range(5):
+            code, col = cells.get((r, c), ("", "white"))
+            ax.add_patch(plt.Rectangle((c + 0.04, r + 0.04), 0.92, 0.92, fc=col,
+                                       ec="#BBBBBB", lw=0.6))
+            if code:
+                ax.text(c + 0.5, r + 0.5, code, ha="center", va="center", fontsize=11,
+                        fontweight="bold", color="black" if col == "#DDDDDD" else "white")
+    for c, n in enumerate(names):
+        ax.text(c + 0.5, -0.12, n, ha="center", va="bottom", fontsize=8.5, fontweight="bold")
+    lab = fig.add_axes([0.0, 0.20, 0.25, 0.55]); lab.axis("off")
+    lab.set_xlim(0, 1); lab.set_ylim(0, 5); lab.invert_yaxis()
+    for r, (n, s) in enumerate(zip(names, sub)):
+        lab.text(0.97, r + 0.38, n, ha="right", va="center", fontsize=8.5, fontweight="bold")
+        lab.text(0.97, r + 0.68, s, ha="right", va="center", fontsize=6.5, color="#444444")
+    lab.text(0.10, 2.5, "Trained on", rotation=90, ha="center", va="center", fontsize=9)
+    lab.text(0.97, -0.12, "Tested on:", ha="right", va="bottom", fontsize=9, style="italic")
+
+    # --- legend
+    leg = fig.add_axes([0.02, 0.0, 0.96, 0.18]); leg.axis("off")
+    leg.set_xlim(0, 100); leg.set_ylim(0, 18)
+    items = [("A", "#4E79A7", "Design A: the proposed model, trained on mPower vowels, applied to each clinical dataset"),
+             ("B", "#F28E2B", "Design B: a head trained on one clinical dataset's speech, applied to the other two"),
+             ("C", "#59A14F", "Bridge2AI as source: vowel, DDK and speech heads applied to the other datasets"),
+             ("D", "#B07AA1", "Bridge2AI as target: the mPower vowel model applied to Bridge2AI"),
+             ("W", "#DDDDDD", "Within one dataset: participant-disjoint cross-validation; S = PD against other disorders")]
+    for i, (code, col, txt) in enumerate(items):
+        y = 16 - i * 3.0
+        leg.add_patch(plt.Rectangle((1, y - 1.1), 3.2, 2.2, fc=col, ec="#888888", lw=0.5))
+        leg.text(2.6, y, code, ha="center", va="center", fontsize=7, fontweight="bold",
+                 color="black" if col == "#DDDDDD" else "white")
+        leg.text(5.5, y, txt, va="center", fontsize=7.5)
+    leg.text(1, 0.6, "Every cell is run on the data as published and again with age controlled "
+             "where age is recorded (five-year matching, age-comparable test sets), over five seeds.",
+             fontsize=7.5, style="italic")
+    _save(fig, "fig4_0_experiment_map")
+
+
 def main() -> None:
     warnings.simplefilter("ignore")
     f_protocol(); f_depth(); f_labels_vs_age(); f_windowing()
-    f_probes(); f_transfer_b(); f_agegap()
+    f_probes(); f_transfer_b(); f_agegap(); f_experiment_map()
     # f_two_designs() is no longer called: fig4_3_two_designs.pdf is now the author's
     # hand-made version, and regenerating it here would overwrite that.
     n = len(list(OUT.glob("*.pdf")))
