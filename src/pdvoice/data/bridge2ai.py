@@ -17,8 +17,15 @@ Labels (group column, then label):
                 is a disease control for the specificity question (PD vs other disorders).
     'ambiguous' in the PD table but without a gold-standard 'Yes', or flagged as both PD
                 and control -> label <NA>.
-NOTE: phenotype/diagnosis/control.tsv is NOT the control list (its single column is 'Yes'
-for some people); the control flag is in eligibility.tsv.
+    'control_voice_condition'
+                a control whom the assessor judged, after examining them and listening to
+                their voice, to have a condition affecting speech or voice
+                (control.tsv diagnosis_c_ac = 'Yes') -> label <NA>. Not a clean
+                healthy control, so excluded from PD-vs-control analyses.
+NOTE: the control flag is eligibility.is_control_participant. control.tsv lists
+everyone so flagged plus some who are not; its single column is the assessor's
+judgment above, not a control indicator. Shukla et al. (JMIR 2026) took every participant in
+control.tsv as a control.
 
 Task kinds (task_code keeps the release's task name with any run number removed):
     vowel   prolonged-vowel, maximum-phonation-time. The prolonged vowel is elicited as
@@ -93,10 +100,13 @@ def bridge2ai_participants(root=BRIDGE2AI_DIR) -> pd.DataFrame:
     gold = set(pdx.loc[pdx.diagnosis_parkinsons_gold_standard_diagnosis == "Yes", "participant_id"])
     in_pd_table = set(pdx.participant_id)
     control = set(elig.loc[elig.is_control_participant == "Yes", "participant_id"])
+    ctl = _read(root, "diagnosis/control.tsv")
+    voice_condition = set(ctl.loc[ctl.diagnosis_c_ac == "Yes", "participant_id"])
 
     p = elig[["participant_id"]].copy()
     p["group"] = "other"
     p.loc[p.participant_id.isin(control), "group"] = "control"
+    p.loc[p.participant_id.isin(control & voice_condition), "group"] = "control_voice_condition"
     p.loc[p.participant_id.isin(gold), "group"] = "pd"
     p.loc[p.participant_id.isin((in_pd_table - gold) | (gold & control)), "group"] = "ambiguous"
     p["label"] = p.group.map({"pd": 1, "control": 0}).astype("Int64")
