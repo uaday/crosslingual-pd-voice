@@ -323,7 +323,7 @@ def appendix_b():
              "from the project's source package \\texttt{pdvoice}, in the order a recording "
              "passes through them. Imports and module-level constants are omitted. The "
              "complete code, including the analysis scripts named in the text, is in the "
-             "project repository.", ""]
+             "project repository (Appendix~\\ref{app:reproduce}).", ""]
     for title, desc, rel, names in SAMPLES:
         if title:
             parts += [f"\\section{{{title}}}", desc, ""]

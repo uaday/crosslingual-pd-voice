@@ -5,10 +5,27 @@ and where its output is written. Every table and data figure in `thesis/` is gen
 those outputs by `scripts/thesis_tables.py` and `scripts/thesis_figures.py`; no number in a
 table is typed by hand.
 
+Code: https://github.com/uaday/pd-research (private repository; access on request to the
+author or to Dr Hamid Sharifzadeh, Unitec). Branch `data-audit-and-drivers`.
+
 ## 1. Environment
 
-- Python 3.12, a CUDA GPU for embedding extraction (an NVIDIA L40S was used). Everything
-  after extraction runs on a CPU.
+- Python 3.12.10 on Windows 10, with a university GPU server (NVIDIA L40S, 24 GB virtual
+  GPU, 2 CPU cores) for embedding extraction. Everything after extraction runs on a CPU.
+- Training the classifier head on a GPU is not bit-for-bit reproducible; repeated runs
+  move AUROC by about 0.01.
+
+### Model checkpoints (Hugging Face Hub, exact revisions used)
+
+| Encoder | Model ID | Revision |
+|---|---|---|
+| XLS-R-300M | `facebook/wav2vec2-xls-r-300m` | `1a640f32ac3e39899438a2931f9924c02f080a54` |
+| wav2vec 2.0 base | `facebook/wav2vec2-base` | `0b5b8e868dd84f03fd87d01f9c4ff0f080fecfe8` |
+| HuBERT-large | `facebook/hubert-large-ll60k` | `ff022d095678a2995f3c49bab18a96a9e553f782` |
+| WavLM-large | `microsoft/wavlm-large` | `c1423ed94bb01d80a3f5ce5bc39f6026a0f4828c` |
+| Whisper-small | `openai/whisper-small` | `973afd24965f72e36ca33b3055d56a652f456b4d` |
+
+Voice-activity detection: `silero-vad` 6.2.1. Acoustic features: `praat-parselmouth` 0.4.7.
 - Create a virtual environment in the project root and install the package and its
   dependencies:
 
