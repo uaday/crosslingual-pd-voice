@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import warnings
 
 import numpy as np
@@ -49,7 +50,8 @@ from pdvoice.eval.discrimination import auroc
 from pdvoice.models.head import fit_mlp_head
 from pdvoice.preprocess import quality_control
 
-MODEL, LAYER = "xls-r-300m", 15
+MODEL = "xls-r-300m"
+LAYER = int(os.environ.get("PDV_LAYER", 15))
 EXTERNALS = [("neurovoz", "vowel"), ("ipvs", "vowel"), ("mdvr_kcl", "speech")]
 
 
@@ -105,7 +107,7 @@ def score(head, cal, E):
     dev = next(head.parameters()).device
     with torch.no_grad():
         lg = head(torch.tensor(E, dtype=torch.float32, device=dev)).squeeze(-1).cpu().numpy()
-    return cal.predict_proba(lg)
+    return cal.ranking(lg)  # discrimination: strictly increasing map, no ties (RankingMap)
 
 
 def subject_auroc(sid, y, p):

@@ -60,13 +60,14 @@ def load_full():
     return df, d["X"].astype(np.float32)
 
 
-def block(y, p, thr):
-    pt, lo, hi = bootstrap_ci(y, p)
+def block(y, p, thr, r):
+    # discrimination on the uncalibrated score r; calibration/threshold on p
+    pt, lo, hi = bootstrap_ci(y, r)
     return {"n": int(len(y)), "n_pd": int(y.sum()), "auroc": round(pt, 4),
-            "auroc_ci": [round(lo, 4), round(hi, 4)], "auprc": round(auprc(y, p), 4),
+            "auroc_ci": [round(lo, 4), round(hi, 4)], "auprc": round(auprc(y, r), 4),
             "ece": round(calibration_error(y, p)["ece"], 4),
             "mce": round(calibration_error(y, p)["mce"], 4),
-            "sens_at_90spec": round(sensitivity_at_specificity(y, p, 0.90)["sensitivity"], 4),
+            "sens_at_90spec": round(sensitivity_at_specificity(y, r, 0.90)["sensitivity"], 4),
             **{k: round(v, 4) for k, v in threshold_metrics(y, p, thr).items()
                if k in ("sensitivity", "specificity", "balanced_accuracy", "f1")}}
 
@@ -97,10 +98,10 @@ def run_seed(df, X, cap, seed, conv, save_model=False):
             tl = m(torch.tensor(Xa[te], dtype=torch.float32, device=dev)).squeeze(-1).cpu().numpy()
         _, cal = select_best_by_brier(vlog, y[va])
         oof.append(pd.DataFrame({"s": dfa.loc[te, "subject_id"].to_numpy(),
-                                 "y": y[te], "p": cal.predict_proba(tl)}))
-    sg = pd.concat(oof).groupby("s").agg(y=("y", "first"), p=("p", "mean"))
+                                 "y": y[te], "p": cal.predict_proba(tl), "r": cal.ranking(tl)}))
+    sg = pd.concat(oof).groupby("s").agg(y=("y", "first"), p=("p", "mean"), r=("r", "mean"))
     thr_cv = youden_threshold(sg.y, sg.p)
-    within = block(sg.y.to_numpy(), sg.p.to_numpy(), thr_cv)
+    within = block(sg.y.to_numpy(), sg.p.to_numpy(), thr_cv, sg.r.to_numpy())
 
     # ---- locked model -> externals ----
     tr, va = next(GroupShuffleSplit(1, test_size=VAL_FRACTION, random_state=seed)
@@ -135,9 +136,10 @@ def run_seed(df, X, cap, seed, conv, save_model=False):
         assert len(EX) == len(edf), f"{ds}: {len(EX)} != {len(edf)}"
         with torch.no_grad():
             lg = head(torch.tensor(EX, dtype=torch.float32, device=dev)).squeeze(-1).cpu().numpy()
-        s = pd.DataFrame({"s": edf.subject_id, "y": edf.label.astype(int), "p": cal.predict_proba(lg)})
-        g = s.groupby("s").agg(y=("y", "first"), p=("p", "mean"))
-        transfer[ds] = block(g.y.to_numpy(), g.p.to_numpy(), thr)
+        s = pd.DataFrame({"s": edf.subject_id, "y": edf.label.astype(int),
+                          "p": cal.predict_proba(lg), "r": cal.ranking(lg)})
+        g = s.groupby("s").agg(y=("y", "first"), p=("p", "mean"), r=("r", "mean"))
+        transfer[ds] = block(g.y.to_numpy(), g.p.to_numpy(), thr, g.r.to_numpy())
 
     return {"seed": seed, "n_subjects": int(am.subject_id.nunique()),
             "n_recordings": int(len(am)),

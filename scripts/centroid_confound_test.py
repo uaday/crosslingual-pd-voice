@@ -76,7 +76,7 @@ def score(head, cal, E):
     dev = next(head.parameters()).device
     with torch.no_grad():
         lg = head(torch.tensor(E, dtype=torch.float32, device=dev)).squeeze(-1).cpu().numpy()
-    return cal.predict_proba(lg)
+    return cal.ranking(lg)  # discrimination: strictly increasing map, no ties (RankingMap)
 
 
 def subject_auroc(edf, p):

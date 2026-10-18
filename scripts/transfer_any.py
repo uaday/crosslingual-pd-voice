@@ -101,15 +101,18 @@ def get_set(ds, task, layer):
     return df, embed(df, layer, cache)
 
 
-def subj_metrics(df, p, thr):
-    s = pd.DataFrame({"s": df["subject_id"], "y": df["label"].astype(int), "p": p})
-    g = s.groupby("s").agg(y=("y", "first"), p=("p", "mean"))
-    y, p = g["y"].to_numpy(), g["p"].to_numpy()
-    auc, alo, ahi = bootstrap_ci(y, p, metric=auroc)
+def subj_metrics(df, pr, thr):
+    """pr = (calibrated probability, ranking score from calibration.RankingMap). Discrimination uses the
+    ranking score (calibration.RankingMap); calibration measures use the probability."""
+    p, r = pr
+    s = pd.DataFrame({"s": df["subject_id"], "y": df["label"].astype(int), "p": p, "r": r})
+    g = s.groupby("s").agg(y=("y", "first"), p=("p", "mean"), r=("r", "mean"))
+    y, p, r = g["y"].to_numpy(), g["p"].to_numpy(), g["r"].to_numpy()
+    auc, alo, ahi = bootstrap_ci(y, r, metric=auroc)
     return {"n": int(len(y)), "n_pd": int((y == 1).sum()), "n_hc": int((y == 0).sum()),
-            "auroc": auc, "auroc_ci": [alo, ahi], "auprc": auprc(y, p),
+            "auroc": auc, "auroc_ci": [alo, ahi], "auprc": auprc(y, r),
             "brier": float(brier_score_loss(y, p)), "ece": calibration_error(y, p)["ece"],
-            "sens_at_90spec": sensitivity_at_specificity(y, p, 0.90)["sensitivity"]}
+            "sens_at_90spec": sensitivity_at_specificity(y, r, 0.90)["sensitivity"]}
 
 
 def within_cv(df, X, y):
@@ -123,9 +126,10 @@ def within_cv(df, X, y):
             tl = m(torch.tensor(X[te], dtype=torch.float32, device=dev)).squeeze(-1).cpu().numpy()
         _, cal = select_best_by_brier(vlog, y[va])
         oof.append(pd.DataFrame({"subject_id": df.loc[te, "subject_id"].to_numpy(),
-                                 "label": y[te], "p": cal.predict_proba(tl)}))
+                                 "label": y[te], "p": cal.predict_proba(tl),
+                                 "r": cal.ranking(tl)}))
     o = pd.concat(oof)
-    return subj_metrics(o.rename(columns={"label": "label"}), o["p"].to_numpy(), 0.5)
+    return subj_metrics(o, (o["p"].to_numpy(), o["r"].to_numpy()), 0.5)
 
 
 def main():
@@ -158,7 +162,7 @@ def main():
     def score(X):
         with torch.no_grad():
             lg = head(torch.tensor(X, dtype=torch.float32, device=dev)).squeeze(-1).cpu().numpy()
-        return cal.predict_proba(lg)
+        return cal.predict_proba(lg), cal.ranking(lg)
 
     results = {"train": args.train, "layer": args.layer, "within": within, "transfer": {}}
     for ds, task in tests:

@@ -127,8 +127,9 @@ def within_auroc(sub, X, y, seed):
             dev = next(m.parameters()).device
             tl = m(torch.tensor(X[te], dtype=torch.float32, device=dev)).squeeze(-1).cpu().numpy()
         _, cal = select_best_by_brier(vlog, y[va])
+        # discrimination on the strictly increasing ranking map (calibration.RankingMap)
         oof.append(pd.DataFrame({"s": dfa.loc[te, "subject_id"].to_numpy(),
-                                 "y": y[te], "p": cal.predict_proba(tl)}))
+                                 "y": y[te], "p": cal.ranking(tl)}))
     g = pd.concat(oof).groupby("s").agg(y=("y", "first"), p=("p", "mean"))
     return auroc(g["y"], g["p"])
 
@@ -146,7 +147,7 @@ def transfer_aurocs(sub, X, y, ext_cache, seed, adapt="none"):
         with torch.no_grad():
             lg = m(torch.tensor(EXa, dtype=torch.float32, device=dev)).squeeze(-1).cpu().numpy()
         s = pd.DataFrame({"s": edf["subject_id"], "y": edf["label"].astype(int),
-                          "p": cal.predict_proba(lg)})
+                          "p": cal.ranking(lg)})
         g = s.groupby("s").agg(y=("y", "first"), p=("p", "mean"))
         out[ds] = auroc(g["y"], g["p"])
     return out
@@ -159,6 +160,8 @@ def main() -> None:
                     help="comma list; also available: agesexmatched")
     ap.add_argument("--adapt", choices=["none", "hc-centroid", "hc-standardize"],
                     default="none", help="apply the HC centroid correction to the externals")
+    ap.add_argument("--within-layer", type=int, default=WITHIN_LAYER)
+    ap.add_argument("--transfer-layer", type=int, default=TRANSFER_LAYER)
     ap.add_argument("--tag", default="", help="write label_sensitivity__<tag>.json instead "
                     "of overwriting label_sensitivity.json (which the thesis tables read)")
     args = ap.parse_args()
@@ -167,8 +170,8 @@ def main() -> None:
     wanted = set(args.scenarios.split(","))
 
     df = build_frame()
-    Xw, _, _ = load_full(WITHIN_LAYER)
-    Xt, _, _ = load_full(TRANSFER_LAYER)
+    Xw, _, _ = load_full(args.within_layer)
+    Xt, _, _ = load_full(args.transfer_layer)
     assert len(Xw) == len(Xt) == len(df), "the two full caches disagree on row count"
 
     ext_cache = []
@@ -177,13 +180,13 @@ def main() -> None:
         edf = edf[edf["task_kind"] == task].copy()
         edf, _ = quality_control(edf)
         edf = edf.reset_index(drop=True)
-        EX = np.load(EMBEDDINGS / f"{ds}__{MODEL}__{task}__L{TRANSFER_LAYER}.npz")["X"].astype(np.float32)
+        EX = np.load(EMBEDDINGS / f"{ds}__{MODEL}__{task}__L{args.transfer_layer}.npz")["X"].astype(np.float32)
         assert len(EX) == len(edf), f"{ds}: {len(EX)} != {len(edf)}"
         ext_cache.append((ds, edf, EX))
 
     print(f"=== mPower label vs age sensitivity | {len(seeds)} seeds ===")
     print(f"  pool {len(df):,} recordings / {df.subject_id.nunique():,} speakers")
-    print(f"  within = layer {WITHIN_LAYER} (last) · transfer = L{TRANSFER_LAYER} · cap-{CAP}")
+    print(f"  within = layer {args.within_layer} · transfer = L{args.transfer_layer} · cap-{CAP}")
     ages = subject_age_stats(df)   # df is one row per RECORDING, and uncapped here
     print(f"  age (per speaker): PD {ages['age_pd']:.1f}  HC {ages['age_hc']:.1f}"
           f"  gap {ages['age_gap']:+.1f} yr\n")
@@ -238,8 +241,8 @@ def main() -> None:
     print("  Label noise would show up as: within UP and transfer UP.")
 
     LOGS.mkdir(parents=True, exist_ok=True)
-    out = {"model": MODEL, "cap": CAP, "within_layer": WITHIN_LAYER,
-           "transfer_layer": TRANSFER_LAYER, "seeds": seeds,
+    out = {"model": MODEL, "cap": CAP, "within_layer": args.within_layer,
+           "transfer_layer": args.transfer_layer, "seeds": seeds,
            "age_pd": ages["age_pd"], "age_hc": ages["age_hc"],
            "age_gap": ages["age_gap"], "age_level": ages["age_level"],
            "adapt": args.adapt, "runs": runs, "summary": rows}
