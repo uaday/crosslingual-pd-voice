@@ -65,7 +65,11 @@ def main() -> None:
         if not f.exists():
             print(f"(missing {fn})")
             continue
-        p = pd.read_csv(f)[["subject_id", "p"]].merge(subj, on="subject_id", how="inner")
+        raw = pd.read_csv(f)
+        # discrimination uses the ranking score where it was saved (calibration.RankingMap)
+        if "r" in raw.columns:
+            raw = raw.drop(columns="p").rename(columns={"r": "p"})
+        p = raw[["subject_id", "p"]].merge(subj, on="subject_id", how="inner")
         y = p.label.to_numpy()
         r = dict(n=len(p), auroc_all=auc(y, p.p))
         pe = p[p.group.isin(["pd", "ehc"])]

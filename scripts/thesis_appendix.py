@@ -64,7 +64,7 @@ def a_transfer():
         layer = "24" if layer == "None" else layer
         cfg = f"L{layer}, {'whole file' if wfull else 'fixed window'}"
         if adapt:
-            cfg += ", " + {"__adapt-hc": "HC centroid",
+            cfg += ", " + {"__adapt-hc-centroid": "HC centroid",
                            "__adapt-hc-standardize": "HC standardise"}[adapt]
         a = f"{d['auroc']:.3f} [{lo:.3f}, {hi:.3f}]"
         if hi < 0.5:
