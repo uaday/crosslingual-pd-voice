@@ -403,8 +403,8 @@ def f_experiment_map() -> None:
                  color="black" if col == "#DDDDDD" else "white")
         leg.text(5.5, y, txt, va="center", fontsize=7.5)
     leg.text(1, 0.6, "Every cell is run on the data as published and again with age controlled "
-             "where age is recorded (five-year matching, age-comparable test sets), over five seeds.",
-             fontsize=7.5, style="italic")
+             "where age is recorded. Design A: one run per configuration, five seeds for the age "
+             "analysis; B, C, D, S: five seeds.", fontsize=7.5, style="italic")
     _save(fig, "fig4_0_experiment_map")
 
 

@@ -166,7 +166,8 @@ def t_encoders_confounded() -> None:
        _tab(["Encoder", "AUROC", "95\\% CI", "Configurations tried"], rows, "lrrr"),
        "Encoder comparison on the confounded cohort, as originally conducted.",
        "tab:encoders-confounded",
-       "The intervals do not overlap, so this is a real result under the protocol used. "
+       "The interval of XLS-R overlaps none of the others, so its lead is a real result under "
+       "the protocol used. "
        "The protocol has two defects: the search budget is unequal (five configurations "
        "against one, and that one was wav2vec2's final layer, which "
        "Table~\\ref{tab:encoders-matched} shows is the worst choice for every encoder), "
@@ -220,6 +221,7 @@ def t_protocol() -> None:
 
 def t_significance() -> None:
     f = _j("fusion__xls-r-300m__L15.json")
+    dc = _j("difference_cis.json")
     keys = [("SSL-only vs classical-only", "SSL vs classical"),
             ("SSL-only vs FUSION", "SSL vs combined"),
             ("classical-only vs FUSION", "Classical vs combined")]
@@ -230,16 +232,27 @@ def t_significance() -> None:
             v = t[k]
             fmt = (lambda x: f"\\textbf{{{x:.4f}}}") if coh == "age-matched" else \
                   (lambda x: f"{x:.4f}")
-            rows.append([label, name, fmt(v["p_delong"]),
+            hd = dc["holm"][coh][k]["p_delong"]["holm"]
+            dk = {"SSL-only vs classical-only": "SSL_only - classical_only",
+                  "SSL-only vs FUSION": "FUSION - SSL_only",
+                  "classical-only vs FUSION": "FUSION - classical_only"}[k]
+            diff = (f"{dc['feature_sets'][dk]['delta']:+.3f} [{dc['feature_sets'][dk]['ci95'][0]:+.3f}, "
+                    f"{dc['feature_sets'][dk]['ci95'][1]:+.3f}]") if coh == "age-matched" else \
+                   f"{abs(v['delta']):.3f}"
+            rows.append([label, name, diff, fmt(v["p_delong"]), f"{hd:.3f}",
                          f"{v['p_bootstrap']:.3f}", fmt(v["p_mcnemar"])])
     _w("t4_4_significance.tex",
-       _tab(["Cohort", "Comparison", "DeLong $p$", "Bootstrap $p$", "McNemar $p$"],
-            rows, "llrrr"),
+       "{\\small\\setlength{\\tabcolsep}{3pt}\n"
+       + _tab(["Cohort", "Comparison", "AUROC difference", "DeLong $p$", "Holm",
+               "Bootstrap $p$", "McNemar $p$"], rows, "llcrrrr") + "\n}",
        "Paired significance tests between feature sets, on the same subjects and splits.",
        "tab:significance",
        "DeLong and the paired bootstrap compare ranking; McNemar compares the decisions "
-       "made at each model's operating threshold. With the confound present every "
-       "difference is significant under all three tests. With it removed, none is.")
+       "made at each model's operating threshold. Holm: DeLong $p$ adjusted within each "
+       "cohort's three comparisons. On the age-matched cohort the difference column gives "
+       "the paired-bootstrap 95\\% interval of the AUROC difference (1,000 resamples). With "
+       "the confound present every difference is significant under all three tests. With it "
+       "removed none is, and every difference is smaller than 0.05.")
 
 
 def t_transfer_a() -> None:
@@ -264,15 +277,22 @@ def t_transfer_a() -> None:
         a, (lo, hi), n = r
         inv = "\\textbf{yes}" if hi < 0.5 else "--"
         rows.append([label, str(n), f"{a:.3f}", f"[{lo:.3f}, {hi:.3f}]", inv])
+    ceiling = _j("layer1_mpower__xls-r-300m__cap3__L11.json")["auroc"]
+    allruns = [json.loads(f.read_text()) for f in LOGS.glob("layer2__xls-r-300m__*.json")]
+    n_inv = sum(r["auroc_ci"][1] < 0.5 for r in allruns)
+    n_inv_l11 = sum(1 for r in rows if "yes" in r[-1])
     _w("t4_5_transfer_a.tex",
        _tab(["Target dataset / task", "$n$", "AUROC", "95\\% CI", "Inverted"], rows,
             "lrrrc"),
-       "Transfer of the locked mPower-trained model to each external dataset, at layer 11.",
+       "Design A: transfer of the locked mPower-trained model to each external dataset, at "
+       "layer 11.",
        "tab:transfer-a",
-       "The within-mPower ceiling at this layer is 0.779. \\emph{Inverted} marks results "
-       "whose entire confidence interval lies below 0.500, meaning the model ranks "
-       "patients beneath controls. Across all thirty runs of this design, twelve are "
-       "inverted, and they are concentrated in connected speech.")
+       f"Single run. The within-mPower ceiling at this layer is {ceiling:.3f}. "
+       "\\emph{Inverted} marks results whose entire confidence interval lies below 0.500, "
+       f"meaning the model ranks patients beneath controls: {n_inv_l11} of the {len(rows)} "
+       f"dataset and task pairs at this layer. Across all {len(allruns)} runs of this design "
+       f"(layers 11, 15 and 24, two windows, with and without adaptation), {n_inv} are "
+       "inverted, most of them on connected speech.")
 
 
 def t_transfer_b() -> None:
@@ -293,9 +313,10 @@ def t_transfer_b() -> None:
        "Transfer between external datasets when a new head is trained on connected speech, "
        "averaged over five seeds.",
        "tab:transfer-b",
-       "The encoder is the same frozen model used throughout; only the head is retrained. "
-       "Every direction transfers at 0.665--0.850 against within-dataset scores of "
-       "0.841--0.972.")
+       "Design B. The encoder is the same frozen model used throughout; only the head is "
+       f"retrained. Every direction transfers, at {np.nanmin(g[tg].to_numpy()):.3f}--"
+       f"{np.nanmax(g[tg].to_numpy()):.3f}, against within-dataset scores of "
+       f"{g['within'].min():.3f}--{g['within'].max():.3f}.")
 
 
 def t_agecontrol() -> None:
@@ -343,12 +364,7 @@ def t_deviation() -> None:
         ["Kopar et al.\\ 2026 \\cite{kopar2026}", "--", "balanced accuracy", "+16"],
         ["Field survey \\cite{finlayson2021, cao2025}", "$\\sim$90\\%+", "independent data",
          "10 to 30"],
-        ["\\midrule \\textbf{This thesis}, design A (confounded)", "0.801", "0.481",
-         "\\textbf{+32.1}"],
-        ["\\textbf{This thesis}, design A (age-matched)", "0.617", "0.605",
-         "\\textbf{+1.2}"],
-        ["\\textbf{This thesis}, design B", "0.841--0.972", "0.665--0.850",
-         "\\textbf{+16.2}"],
+        *_thesis_deviation_rows(),
     ]
     _w("t4_8_deviation.tex",
        "{\\small\n"
@@ -358,9 +374,32 @@ def t_deviation() -> None:
        "tab:deviation",
        "The published band is roughly 8--34 percentage points, and one direction in "
        "Klemp\\'i\\v{r}'s work improves rather than degrades. Design B sits mid-range and "
-       "reproduces that direction-dependence. The age-matched arm is an order of magnitude "
-       "better than any published figure, because the \\emph{home} benchmark was made "
-       "honest rather than the foreign one improved.")
+       "reproduces that direction-dependence. The age-matched arm falls far below the "
+       "published band because the \\emph{home} benchmark was made honest, not because "
+       "transfer improved. Kopar et al.\\ report balanced accuracy, not AUROC, so their "
+       "figure is on a different scale from the others.")
+
+
+def _thesis_deviation_rows():
+    def mt(runs, sc):
+        return float(np.mean([np.nanmean([v for k, v in r.items() if k.startswith("transfer_")])
+                              for r in runs[sc]]))
+    ls = _j("label_sensitivity.json")["runs"]
+    rows = []
+    for sc, name in (("baseline", "\\midrule \\textbf{This thesis}, design A (field)"),
+                     ("agematched", "\\textbf{This thesis}, design A (age-matched)")):
+        w = float(np.mean([r["within"] for r in ls[sc]]))
+        t = mt(ls, sc)
+        rows.append([name, f"{w:.3f}", f"{t:.3f}", f"\\textbf{{{100 * (w - t):+.1f}}}"])
+    b = pd.DataFrame(_j("speech_agematch.json")["runs"])
+    b = b[b.cohort == "full"]
+    tg = [c for c in b.columns if c.startswith("-> ")]
+    g = b.groupby("source")[["within"] + tg].mean(numeric_only=True)
+    v = g[tg].to_numpy()
+    rows.append(["\\textbf{This thesis}, design B", f"{g.within.min():.3f}--{g.within.max():.3f}",
+                 f"{np.nanmin(v):.3f}--{np.nanmax(v):.3f}",
+                 f"\\textbf{{{100 * (g.within.mean() - np.nanmean(v)):+.1f}}}"])
+    return rows
 
 
 def t_probes() -> None:
@@ -412,6 +451,11 @@ def t_windowing() -> None:
                 deltas.append(b - a)
                 cells += [f"{a:.3f}", f"{b:.3f}", f"{b - a:+.3f}"]
         rows.append([f"{names[ds]} / {task}"] + cells)
+    l1c = _j("layer1_mpower__xls-r-300m__cap3__L15.json")
+    l1f = _j("layer1_mpower__xls-r-300m__cap3__L15__Wfull.json")
+    w15c, w15f = l1c["auroc"], l1f["auroc"]
+    w15c_ci = f"[{l1c['auroc_ci'][0]:.3f}, {l1c['auroc_ci'][1]:.3f}]"
+    w15f_ci = f"[{l1f['auroc_ci'][0]:.3f}, {l1f['auroc_ci'][1]:.3f}]"
     _w("t4_10_windowing.tex",
        _tab(["Dataset / task", "L11 core", "L11 full", "$\\Delta$",
              "L15 core", "L15 full", "$\\Delta$"], rows, "lrrrrrr"),
@@ -420,10 +464,11 @@ def t_windowing() -> None:
        "tab:windowing",
        f"Across the {len(deltas)} comparisons the mean change is "
        f"{np.mean(deltas):+.3f} (standard deviation {np.std(deltas, ddof=1):.3f}, range "
-       f"{min(deltas):+.3f} to {max(deltas):+.3f}). Within mPower the same change improves "
-       "AUROC from 0.763 to 0.841 with non-overlapping intervals. A change with no "
-       "systematic external effect therefore moves individual external results by up to "
-       "0.29, on cohorts of 37--50 speakers.")
+       f"{min(deltas):+.3f} to {max(deltas):+.3f}). Within mPower, at layer 15, the same "
+       f"change moves AUROC from {w15c:.3f} {w15c_ci} to {w15f:.3f} {w15f_ci}. A change "
+       "with no systematic external effect therefore moves individual external results by "
+       f"up to {max(abs(min(deltas)), abs(max(deltas))):.2f}, on cohorts of 37 to 111 "
+       "speakers.")
 
 
 def t_classical_transfer() -> None:
@@ -482,8 +527,10 @@ def t_master() -> None:
     ls_runs = _j("label_sensitivity.json")["runs"]
     asx = {r["scenario"]: r for r in _j("label_sensitivity__agesex.json")["summary"]}
     ad_runs = _j("label_sensitivity__adapt_centroid.json")["runs"]
-    rp = _j("restricted_permutation.json")
+    rp = _j("restricted_permutation__fast__n1000.json")
     dc = _j("decision_curves.json")["age-matched | SSL, SVM"]
+    b2 = _j(f"bridge2ai_agematch__L{B2L}.json")
+    b2c = _j(f"bridge2ai_review_checks__L{B2L}.json")
 
     def mean_t(runs, sc):
         return float(np.mean([np.nanmean([v for k, v in r.items() if k.startswith("transfer_")])
@@ -532,19 +579,19 @@ def t_master() -> None:
     rows = [
         ["\\multicolumn{6}{l}{\\emph{Design A, five-seed run: field protocol (897 PD / 3{,}912 HC) "
          "and age-matched (562 / 562)}} \\\\[-0.2em]%", "", "", "", "", ""],
-        ["Within mPower, field protocol", pm(ls["baseline"]["within"]), "24", "MLP head", "5",
+        ["Within mPower, field protocol", pm(ls["baseline"]["within"]), "15", "MLP head", "5",
          "\\S\\ref{subsec:diagnosis}"],
         ["mPower $\\rightarrow$ IPVS / NeuroVoz / MDVR-KCL, field", ext("baseline"), "15",
          "MLP head", "5", "\\S\\ref{subsec:diagnosis}"],
-        ["Within mPower, age-matched", pm(ls["agematched"]["within"]), "24", "MLP head", "5",
+        ["Within mPower, age-matched", pm(ls["agematched"]["within"]), "15", "MLP head", "5",
          "\\S\\ref{subsec:diagnosis}"],
         ["mPower $\\rightarrow$ IPVS / NeuroVoz / MDVR-KCL, age-matched" + S,
          ext("agematched"), "15", "MLP head", "5", "\\S\\ref{subsec:diagnosis}"],
         ["Within minus mean transfer, field $\\rightarrow$ age-matched",
-         f"{gap('baseline'):.1f} $\\rightarrow$ {gap('agematched'):.1f} pp", "24 vs 15",
+         f"{gap('baseline'):.1f} $\\rightarrow$ {gap('agematched'):.1f} pp", "15",
          "MLP head", "5", "\\S\\ref{subsec:diagnosis}"],
         ["Within mPower, age- and sex-matched (560 / 560)", pm(asx["agesexmatched"]["within"]),
-         "24", "MLP head", "5", "\\S\\ref{subsec:diagnosis}"],
+         "15", "MLP head", "5", "\\S\\ref{subsec:diagnosis}"],
         ["$\\rightarrow$ IPVS / NeuroVoz / MDVR-KCL, age- and sex-matched",
          f"{asx['agesexmatched']['ipvs'].split()[0]} / "
          f"{asx['agesexmatched']['neurovoz'].split()[0]} / "
@@ -555,8 +602,9 @@ def t_master() -> None:
          f"{mean_t(ad_runs, 'agematched'):.3f}", "15", "MLP head", "5",
          "\\S\\ref{subsec:variants}"],
         [f"Restricted permutation ({rp['n_perm']} permutations): observed vs within-age-bin null",
-         f"{rp['observed']:.3f} vs {rp['within_age_bins']['null_mean']:.3f}", "15",
-         "PCA + logistic", "1", "\\S\\ref{subsec:diagnosis}"],
+         f"{rp['observed']:.3f} vs {rp['within_age_bins']['null_mean']:.3f} "
+         f"($p = {rp['within_age_bins']['p_value']:.3f}$)", "15",
+         "PCA + logistic", "--", "\\S\\ref{subsec:diagnosis}"],
         ["\\midrule \\multicolumn{6}{l}{\\emph{Classifier comparison, one recording per "
          "participant (field $\\rightarrow$ age-matched)}} \\\\[-0.2em]%", "", "", "", "", ""],
         ["Age alone", f"{best[('confounded', 'age only (1)')]:.3f} $\\rightarrow$ "
@@ -577,8 +625,8 @@ def t_master() -> None:
         ["Five encoders, best layer each (XLS-R: L"
          f"{sweep['xls-r-300m']['best_layer']})", f"{min(span):.3f}--{max(span):.3f}", "all",
          "linear probe", "1", "Table~\\ref{tab:encoders-matched}"],
-        ["\\midrule \\multicolumn{6}{l}{\\emph{Locked transfer at the cross-validated layer "
-         "(field protocol)}} \\\\[-0.2em]%", "", "", "", "", ""],
+        ["\\midrule \\multicolumn{6}{l}{\\emph{Design A: locked transfer at layer 11, on the "
+         "cross-validated plateau (field protocol)}} \\\\[-0.2em]%", "", "", "", "", ""],
         ["Within mPower", f"{l11:.3f}", "11", "MLP head", "1", "\\S\\ref{sec:encoder}"],
         ["mPower $\\rightarrow$ six external dataset/task pairs", f"{min(ta):.3f}--{max(ta):.3f}",
          "11", "MLP head", "1", "Table~\\ref{tab:transfer-a}"],
@@ -590,12 +638,23 @@ def t_master() -> None:
          "MLP head", "5", "Table~\\ref{tab:agecontrol}"],
         ["\\midrule \\multicolumn{6}{l}{\\emph{Clinical utility}} \\\\[-0.2em]%",
          "", "", "", "", ""],
-        ["Net benefit at $p_t = 0.10$, model vs screen all" + "\\textsuperscript{b}",
-         f"{ob['NB_at_target_prev']:.5f} vs {ob['NB_all_at_target_prev']:.5f}", "15", "SVM",
-         "1", "\\S\\ref{sec:evaluation}"],
-        ["Largest decision-curve gain over both defaults, age-matched\\textsuperscript{c}",
+        ["Largest decision-curve gain over both defaults, age-matched\\textsuperscript{b}",
          f"{dc['max_gain_per_1000']:.1f} per 1{{,}}000 at $p_t = {dc['at_pt']:.2f}$", "15",
          "SVM", "1", "Figure~\\ref{fig:dca}"],
+        ["\\midrule \\multicolumn{6}{l}{\\emph{Designs C and S: Bridge2AI (98 PD / 120 HC), layer "
+         "chosen inside Bridge2AI}} \\\\[-0.2em]%", "", "", "", "", ""],
+        ["Age alone, as recruited", f"{b2['vowel']['uncorrected']['age_only']:.3f}", "--",
+         "logistic", "--", "Table~\\ref{tab:b2ai-within}"],
+        ["Within, age-matched: speech / DDK / vowel",
+         " / ".join(f"{b2[t]['age_matched']['voice_mean']:.3f}" for t in ("speech", "ddk", "vowel")),
+         "8", "linear probe", "5", "Table~\\ref{tab:b2ai-within}"],
+        ["Speech $\\rightarrow$ IPVS / NeuroVoz / MDVR-KCL (age-comparable)",
+         " / ".join(f"{b2c['A5_transfer'][k]['auroc']:.3f}" for k in
+                    ("ipvs (no young controls)", "neurovoz (age-matched)", "mdvr_kcl (as published)")),
+         "8", "MLP head", "5", "Table~\\ref{tab:b2ai-transfer}"],
+        ["Speech model: cognitive impairment vs controls / PD vs cognitive impairment",
+         f"{b2c['A1']['ci vs control']['auroc']:.3f} / {b2c['A1']['pd vs ci']['auroc']:.3f}",
+         "8", "linear probe", "5", "Table~\\ref{tab:confusion}"],
     ]
     # rows that open a block carry their own line ending; drop the padding cells
     body_rows = []
@@ -615,14 +674,12 @@ def t_master() -> None:
        "Appendix~\\ref{app:tables} gives the per-seed and per-run values. "
        "Field protocol: the uncorrected mPower cohort, capped at three recordings per "
        "participant (897 with a diagnosis, 3{,}912 without; prevalence 0.187). Age-matched: "
-       "frequency-matched in 5-year bins (562 per group). Layer 24 is the encoder's final "
-       "layer. \\textsuperscript{a}MDVR-KCL records no age, so only the training side is "
-       "matched for that dataset. \\textsuperscript{b}Computed on the age-matched cohort "
-       f"(prevalence 0.5) and re-weighted to the mPower prevalence of 0.187; at this threshold "
-       f"the model flags {ob['TP'] + ob['FP']:,} of {ob['TP'] + ob['FP'] + ob['TN'] + ob['FN']:,} "
-       f"participants (sensitivity {ob['sens']:.2f}, specificity {ob['spec']:.3f}). "
-       "\\textsuperscript{c}Standard decision curve: positive when the prior-shifted "
-       "probability reaches $p_t$; net benefit at prevalence 0.187.")
+       "frequency-matched in 5-year bins (562 per group). Within-dataset and transfer figures "
+       "of the five-seed run are both at layer 15. Bridge2AI uses layer 8, chosen by "
+       "cross-validation inside Bridge2AI. \\textsuperscript{a}MDVR-KCL records no age, so "
+       "only the training side is matched for that dataset. \\textsuperscript{b}Standard "
+       "decision curve: positive when the prior-shifted probability reaches $p_t$; net "
+       "benefit at prevalence 0.187.")
 
 
 def t_binwidth() -> None:
@@ -646,70 +703,86 @@ def _pm(m, s):
     return f"{m:.3f} $\\pm$ {s:.3f}"
 
 
+def _ci(d):
+    return f"{d['auroc']:.3f} [{d['ci95'][0]:.2f}, {d['ci95'][1]:.2f}]"
+
+
+B2L = 8   # Bridge2AI layer, chosen inside Bridge2AI (bridge2ai_layer_select.py; review A2)
+
+
 def t_b2ai_within() -> None:
-    r = _j("bridge2ai_agematch.json")
+    r = _j(f"bridge2ai_agematch__L{B2L}.json")
+    ci = _j(f"bridge2ai_review_checks__L{B2L}.json")["A5_within"]
     rows = []
     for task, name in (("vowel", "Sustained vowel"), ("ddk", "Diadochokinesis"),
                        ("speech", "Connected speech")):
         u, a, p = r[task]["uncorrected"], r[task]["age_matched"], r[task]["restricted_permutation"]
         rows.append([name, f"{u['n_pd']} / {u['n_hc']}", f"{u['age_only']:.3f}",
                      f"{u['voice']:.3f}", f"{a['n_per_group']}", f"{a['age_only']:.3f}",
-                     _pm(a["voice_mean"], a["voice_sd"]),
-                     f"+{p['excess']:.3f} ({p['p_value']:.3f})"])
+                     _ci(ci[task]), f"+{p['excess']:.3f} ({p['p_value']:.3f})"])
     _w("t4_20_b2ai_within.tex",
        "{\\small\\setlength{\\tabcolsep}{3pt}\n"
-       + _tab(["Task", "PD / HC", "Age alone", "Voice", "Pairs", "Age alone", "Voice",
-               "Above age null ($p$)"], rows, "Lcccccc c") + "\n}",
-       "Parkinson's disease against healthy controls within Bridge2AI, before (columns 2 to "
-       "4) and after (columns 5 to 7) frequency matching on age in five-year bins.",
+       + _tab(["Task", "PD / HC", "Age alone", "Voice", "Pairs", "Age alone",
+               "Voice [95\\% CI]", "Above age null ($p$)"], rows, "Lcccccc c") + "\n}",
+       "Design C, within Bridge2AI: Parkinson's disease against healthy controls before "
+       "(columns 2 to 4) and after (columns 5 to 7) frequency matching on age in five-year "
+       "bins.",
        "tab:b2ai-within",
-       "Participant-level AUROC; linear probe on XLS-R layer 15, participant-disjoint 5-fold "
-       "cross-validation. Matched values are the mean and standard deviation over five "
-       "matching seeds. The last column is the margin over a restricted permutation null "
-       "in which labels are shuffled only within five-year age bins (200 permutations, "
-       "full cohort); 0.005 is the smallest attainable $p$.")
+       f"Participant-level AUROC; linear probe on XLS-R layer {B2L}, the layer chosen by "
+       "cross-validation inside Bridge2AI (Section~\\ref{subsec:bridge2ai-results}); "
+       "participant-disjoint 5-fold cross-validation. Matched values are the mean over five "
+       "matching seeds with a participant bootstrap interval (1,000 resamples per seed, "
+       "pooled). The last column is the margin over a restricted permutation null in which "
+       "labels are shuffled only within five-year age bins (1,000 permutations, full cohort); "
+       "0.001 is the smallest attainable $p$.")
 
 
 def t_b2ai_transfer() -> None:
-    a = pd.read_csv(LOGS / "bridge2ai_transfer_agecheck.csv")
-    t = pd.read_csv(LOGS / "bridge2ai_transfer.csv")
-    plan = [("speech", "ipvs", "no young controls", "IPVS speech, elderly controls only"),
-            ("speech", "neurovoz", "age-matched", "NeuroVoz speech, age-matched"),
-            ("speech", "mdvr_kcl", "as published", "MDVR-KCL speech (no age data)"),
-            ("vowel", "ipvs", "as published", "IPVS vowel (age-balanced)"),
-            ("vowel", "neurovoz", "age-matched", "NeuroVoz vowel, age-matched"),
-            ("ddk", "neurovoz", "age-matched", "NeuroVoz DDK, age-matched")]
+    a = pd.read_csv(LOGS / f"bridge2ai_transfer_agecheck__L{B2L}.csv")
+    t = pd.read_csv(LOGS / "bridge2ai_transfer.csv")          # mPower rows, layer 15
+    ci = _j(f"bridge2ai_review_checks__L{B2L}.json")["A5_transfer"]
+    plan = [("speech", "ipvs", "no young controls", "IPVS speech, elderly controls only",
+             "ipvs (no young controls)"),
+            ("speech", "neurovoz", "age-matched", "NeuroVoz speech, age-matched",
+             "neurovoz (age-matched)"),
+            ("speech", "mdvr_kcl", "as published", "MDVR-KCL speech (no age data)",
+             "mdvr_kcl (as published)"),
+            ("vowel", "ipvs", "as published", "IPVS vowel (age-balanced)", None),
+            ("vowel", "neurovoz", "age-matched", "NeuroVoz vowel, age-matched", None),
+            ("ddk", "neurovoz", "age-matched", "NeuroVoz DDK, age-matched", None)]
     names = {"speech": "Speech", "vowel": "Vowel", "ddk": "DDK"}
     rows = []
-    for task, tgt, sub, label in plan:
+    for task, tgt, sub, label, cikey in plan:
         g = a[(a.task == task) & (a.target == tgt) & (a.target_subset == sub)]
         n = g.iloc[0]
-        cell = {s: _pm(*g[g.source == s].auroc.agg(["mean", "std"])) for s in ("uncorrected", "age-matched")}
-        rows.append([f"Bridge2AI {names[task]}", label, f"{int(n.n_pd)} / {int(n.n_hc)}",
-                     cell["uncorrected"], cell["age-matched"]])
-    for direction, task, tgt, label, src in (
-            ("bridge2ai->", "vowel", "mpower", "mPower vowel, age-matched", "Bridge2AI Vowel"),
-            ("mpower->", "vowel", "bridge2ai", "Bridge2AI vowel, age-matched", "mPower Vowel")):
-        g = t[(t.direction == direction) & (t.task == task) & (t.target == tgt)
+        unc = _pm(*g[g.source == "uncorrected"].auroc.agg(["mean", "std"]))
+        mat = _ci(ci[cikey]) if cikey else _pm(*g[g.source == "age-matched"].auroc.agg(["mean", "std"]))
+        rows.append([f"C: Bridge2AI {names[task]}", label, f"{int(n.n_pd)} / {int(n.n_hc)}", unc, mat])
+    for direction, tgt, label, src in (
+            ("bridge2ai->", "mpower", "mPower vowel, age-matched", "C: Bridge2AI Vowel\\textsuperscript{a}"),
+            ("mpower->", "bridge2ai", "Bridge2AI vowel, age-matched", "D: mPower Vowel\\textsuperscript{a}")):
+        g = t[(t.direction == direction) & (t.task == "vowel") & (t.target == tgt)
               & (t.target_cohort == "age-matched")]
         cell = {s: _pm(*g[g.source == s].auroc.agg(["mean", "std"])) for s in ("uncorrected", "age-matched")}
         rows.append([src, label, "--", cell["uncorrected"], cell["age-matched"]])
     _w("t4_21_b2ai_transfer.tex",
        "{\\small\\setlength{\\tabcolsep}{4pt}\n"
-       + _tab(["Trained on", "Tested on", "PD / HC", "Source as published",
+       + _tab(["Design: trained on", "Tested on", "PD / HC", "Source as published",
                "Source age-matched"], rows, "lLccc") + "\n}",
-       "Locked transfer with Bridge2AI as source and as target, scored on age-comparable "
-       "test sets.",
+       "Designs C and D: locked transfer with Bridge2AI as source and as target, scored on "
+       "age-comparable test sets.",
        "tab:b2ai-transfer",
-       "Participant-level AUROC, mean and standard deviation over five seeds; locked MLP "
-       "head with calibration chosen on validation data. The IPVS speech test set excludes "
-       "the fifteen young controls; the IPVS vowel set contains none. The two mPower rows "
-       "use the age-matched cohort of Section~\\ref{subsec:diagnosis} and Bridge2AI's own "
-       "age-matched subset, re-drawn for each seed.")
+       f"Participant-level AUROC over five seeds; locked MLP head, layer {B2L}. Speech rows "
+       "with an age-matched source give the mean and a participant bootstrap interval "
+       "(1,000 resamples per seed, pooled); other cells give the mean and the standard "
+       "deviation across seeds. The IPVS speech test set excludes the fifteen young "
+       "controls; the IPVS vowel set contains none. \\textsuperscript{a}Layer 15, because "
+       "mPower embeddings exist only at layers 15 and 24; mPower rows use the age-matched "
+       "cohort of Section~\\ref{subsec:diagnosis}.")
 
 
 def t_b2ai_checks() -> None:
-    f = _j("bridge2ai_followups.json")
+    f = _j(f"bridge2ai_followups__L{B2L}.json")
     rows = []
 
     def tr(d, key):
@@ -731,17 +804,17 @@ def t_b2ai_checks() -> None:
        "{\\small\\setlength{\\tabcolsep}{3pt}\n"
        + _tab(["Bridge2AI source", "Pairs", "Within Bridge2AI", "IPVS", "NeuroVoz", "MDVR-KCL"],
               rows, "Lcccc c") + "\n}",
-       "Two checks on the Bridge2AI result: read against spontaneous speech, and matching on "
-       "age and sex together.",
+       "Design C checks: read against spontaneous speech, and matching on age and sex "
+       "together.",
        "tab:b2ai-checks",
-       "Participant-level AUROC, mean and standard deviation over five seeds. External "
-       "columns are locked transfer from the matched Bridge2AI cohort to the age-comparable "
-       "test sets of Table~\\ref{tab:b2ai-transfer} (vowel rows: IPVS vowel and NeuroVoz "
-       "vowel, age-matched). DDK has no external target in these columns.")
+       f"Participant-level AUROC, mean and standard deviation over five seeds; layer {B2L}. "
+       "External columns are locked transfer from the matched Bridge2AI cohort to the "
+       "age-comparable test sets of Table~\\ref{tab:b2ai-transfer} (vowel rows: IPVS vowel "
+       "and NeuroVoz vowel, age-matched). DDK has no external target in these columns.")
 
 
 def t_specificity() -> None:
-    c = _j("bridge2ai_followups.json")["C_specificity"]
+    c = _j(f"bridge2ai_followups__L{B2L}.json")["C_specificity"]
     fam = [("all other disorders", "All other disorders"),
            ("neurological (cognitive impairment, ALS)", "Neurological (cognitive impairment)"),
            ("voice disorders", "Voice disorders"),
@@ -756,15 +829,16 @@ def t_specificity() -> None:
        "{\\small\\setlength{\\tabcolsep}{3pt}\n"
        + _tab(["PD against", "$n$", "Age", "Pairs", "Vowel", "DDK", "Speech"], rows,
               "Lccc ccc") + "\n}",
-       "Separating Parkinson's disease from other disorders within Bridge2AI, after matching "
-       "on age.",
+       "Specificity test (S): separating Parkinson's disease from other disorders within "
+       "Bridge2AI, after matching on age.",
        "tab:specificity",
-       "A classifier trained directly on each contrast; participant-level AUROC, mean and "
-       "standard deviation over five matching seeds. $n$ and age describe the comparison "
-       "group on the speech task. The mood group "
-       "yields few matched pairs, so its figures are unreliable.")
+       f"A classifier trained directly on each contrast; layer {B2L}; participant-level "
+       "AUROC, mean and standard deviation over five matching seeds. $n$ and age describe "
+       "the comparison group on the speech task. The "
+       "mood group yields few matched pairs, so its figures are unreliable.")
 
     conf = {t: c[t]["confusion_PD_vs_control_model"] for t in ("vowel", "ddk", "speech")}
+    a1 = _j(f"bridge2ai_review_checks__L{B2L}.json")["A1"]
     order = [("PD vs control", "PD against controls"),
              ("neurological (cognitive impairment, ALS) vs control", "Cognitive impairment against controls"),
              ("PD vs neurological (cognitive impairment, ALS)", "PD against cognitive impairment"),
@@ -773,16 +847,57 @@ def t_specificity() -> None:
              ("all other disorders vs control", "All other disorders against controls"),
              ("PD vs all other disorders", "PD against all other disorders")]
     rows = [[name, *[_pm(*conf[t][k]) for t in ("vowel", "ddk", "speech")]] for k, name in order]
-    _w("t4_24_confusion.tex",
-       "{\\small\\setlength{\\tabcolsep}{4pt}\n"
-       + _tab(["Comparison scored by the PD model", "Vowel", "DDK", "Speech"], rows, "Lccc") + "\n}",
-       "How a model trained only to separate Parkinson's disease from age-matched healthy "
-       "controls scores participants with other disorders.",
+    rows.append(["\\midrule \\multicolumn{4}{l}{\\emph{Each pair matched on age directly "
+                 "(speech model)}} \\\\[-0.2em]%", "", "", ""])
+    for k, name in (("ci vs control", "Cognitive impairment against controls"),
+                    ("pd vs ci", "PD against cognitive impairment")):
+        v = a1[k]
+        rows.append([f"{name} ({v['pairs']} pairs; age alone {v['age_only']:.3f})", "--", "--",
+                     _pm(v["auroc"], v["seed_sd"])])
+    body = []
+    for r in rows:
+        body.append(r[0][:-1] if r[0].rstrip().endswith("%") else " & ".join(r) + " \\\\")
+    tab = ("\\begin{tabularx}{\\linewidth}{Lccc}\n\\toprule\n\\textbf{Comparison scored by the PD "
+           "model} & \\textbf{Vowel} & \\textbf{DDK} & \\textbf{Speech} \\\\\n\\midrule\n"
+           + "\n".join(body) + "\n\\bottomrule\n\\end{tabularx}")
+    _w("t4_24_confusion.tex", "{\\small\\setlength{\\tabcolsep}{4pt}\n" + tab + "\n}",
+       "Specificity test (S): how a model trained only to separate Parkinson's disease from "
+       "age-matched healthy controls scores participants with other disorders.",
        "tab:confusion",
-       "Participant-level AUROC on the model's predicted probability of Parkinson's disease, "
-       "mean and standard deviation over five seeds. Patients and controls are scored out of "
-       "fold; participants with other disorders were never seen in training. A value near "
-       "0.5 for PD against a disorder means the model cannot tell them apart.")
+       f"Layer {B2L}; participant-level AUROC on the model's predicted probability of "
+       "Parkinson's disease, mean and standard deviation over five seeds. In the upper block "
+       "the controls are those matched to the patients (mean age about 69) and the other "
+       "groups are as recruited (cognitive impairment: mean age 74.8). In the lower block each "
+       "comparison is itself frequency-matched on age, which leaves age alone at chance. "
+       "Patients and controls are scored out of fold; participants with other disorders were "
+       "never seen in training. A value near 0.5 for PD against a disorder means the model "
+       "cannot tell them apart.")
+
+
+def t_b2ai_calibration() -> None:
+    a4 = _j(f"bridge2ai_review_checks__L{B2L}.json")["A4"]
+    rows = []
+    for key, name in (("within_bridge2ai", "Within Bridge2AI, age-matched (5-fold CV)"),
+                      ("neurovoz_age_matched", "Locked, on age-matched NeuroVoz")):
+        d = a4[key]
+        pos = [s["positive_range"] for s in d["per_seed_dca"] if s["positive_range"]]
+        lo, hi = (float(np.median([p[0] for p in pos])),
+                  float(np.median([p[1] for p in pos]))) if pos else (None, None)
+        rows.append([name, f"{d['ece']:.2f}", f"{d['brier']:.2f}", f"{d['slope']:.2f}",
+                     f"{d['intercept']:.2f}", f"{d['max_gain_per_1000']:.0f} at {d['at_threshold']:.2f}",
+                     f"{lo:.2f}--{hi:.2f}" if pos else "--"])
+    _w("t4_25_b2ai_calibration.tex",
+       "{\\small\\setlength{\\tabcolsep}{3pt}\n"
+       + _tab(["Bridge2AI speech model", "ECE", "Brier", "Slope", "Intercept",
+               "Max net benefit /1000 ($p_t$)", "Positive for $p_t$"], rows, "Lcccccc") + "\n}",
+       "Calibration and clinical utility of the Bridge2AI connected-speech model (Design C).",
+       "tab:b2ai-calibration",
+       f"Layer {B2L}; framework head with calibration locked on validation data; medians over "
+       "five seeds. Slope and intercept from logistic recalibration (ideal 1 and 0). Decision "
+       "curves use probabilities prior-shifted to a prevalence of 0.187, as for mPower "
+       "(Section~\\ref{subsec:utility}); net benefit is the gain over the better of screening "
+       "everyone and screening no one. The last column gives the threshold range over which the "
+       "gain is positive (medians across seeds of its lower and upper ends).")
 
 
 def main() -> None:
@@ -796,7 +911,7 @@ def main() -> None:
     t_transfer_a(); t_transfer_b(); t_agecontrol(); t_deviation(); t_probes()
     t_windowing(); t_classical_transfer(); t_master()
     print("Bridge2AI:")
-    t_b2ai_within(); t_b2ai_transfer(); t_b2ai_checks(); t_specificity()
+    t_b2ai_within(); t_b2ai_transfer(); t_b2ai_checks(); t_specificity(); t_b2ai_calibration()
     n = len(list(OUT.glob("*.tex")))
     print(f"\n{n} tables written to {OUT}")
 
