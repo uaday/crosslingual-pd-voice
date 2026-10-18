@@ -34,7 +34,7 @@ import pandas as pd
 import torch
 from sklearn.model_selection import GroupShuffleSplit
 
-from pdvoice.calibration import select_best_by_brier
+from pdvoice.calibration import RankingMap, select_best_by_brier
 from pdvoice.cohort import age_match_ids
 from pdvoice.config import EMBEDDINGS, LOGS, SEED, VAL_FRACTION
 from pdvoice.data import LOADERS
@@ -80,7 +80,7 @@ def score(head, cal, X):
     dev = next(head.parameters()).device
     with torch.no_grad():
         lg = head(torch.tensor(X, dtype=torch.float32, device=dev)).squeeze(-1).cpu().numpy()
-    return cal.predict_proba(lg)
+    return cal.ranking(lg)  # discrimination: strictly increasing map, no ties (RankingMap)
 
 
 def within_cv(df, X, y, seed):
@@ -88,12 +88,12 @@ def within_cv(df, X, y, seed):
     oof = np.zeros(len(y))
     for k in range(5):
         tr, va, te = train_val_test_indices(dfa, test_fold=k, seed=seed)
-        m, _ = fit_mlp_head(X[tr], y[tr], X[va], y[va], seed=seed)
+        m, vlog = fit_mlp_head(X[tr], y[tr], X[va], y[va], seed=seed)
+        rmap = RankingMap().fit(vlog, y[va])  # common scale across folds, no ties
         with torch.no_grad():
             dev = next(m.parameters()).device
-            oof[te] = torch.sigmoid(
-                m(torch.tensor(X[te], dtype=torch.float32, device=dev)).squeeze(-1)
-            ).cpu().numpy()
+            oof[te] = rmap(m(torch.tensor(X[te], dtype=torch.float32, device=dev))
+                           .squeeze(-1).cpu().numpy())
     return subject_auroc(dfa, oof)
 
 

@@ -30,6 +30,7 @@ from sklearn.model_selection import StratifiedGroupKFold
 
 from pdvoice.config import EMBEDDINGS, LOGS
 from pdvoice.eval.discrimination import auroc, bootstrap_ci, paired_bootstrap_auroc
+from pdvoice.calibration import RankingMap
 from pdvoice.models.head import fit_mlp_head
 
 CACHE = "layersweep__xls-r-300m__agematched.npz"
@@ -44,21 +45,25 @@ def cv_auroc(X, y, groups, seed, n_splits=5):
         # an inner split for early stopping, still subject-disjoint
         inner = StratifiedGroupKFold(4, shuffle=True, random_state=seed)
         itr, iva = next(inner.split(X[tr], y[tr], groups[tr]))
-        model, _ = fit_mlp_head(X[tr][itr], y[tr][itr], X[tr][iva], y[tr][iva], seed=seed)
+        model, vlog = fit_mlp_head(X[tr][itr], y[tr][itr], X[tr][iva], y[tr][iva], seed=seed)
+        # pooled across folds: put every fold model on a common scale (calibration.RankingMap)
+        rmap = RankingMap().fit(vlog, y[tr][iva])
         with torch.no_grad():
             dev = next(model.parameters()).device
             lg = model(torch.tensor(X[te], dtype=torch.float32, device=dev)).squeeze(-1)
-            oof[te] = torch.sigmoid(lg).cpu().numpy()
+            oof[te] = rmap(lg.cpu().numpy())
     return oof
 
 
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument("--cohort", default="agematched", choices=["agematched", "confounded"])
     args = ap.parse_args()
     warnings.simplefilter("ignore")
 
-    f = EMBEDDINGS / CACHE
+    cache = f"layersweep__xls-r-300m__{args.cohort}.npz"
+    f = EMBEDDINGS / cache
     if not f.exists():
         raise SystemExit(f"missing {f}\nRun: scripts/extract_all_layers.py --model xls-r-300m")
 
@@ -69,7 +74,7 @@ def main() -> None:
     n_layers = X_all.shape[1]
 
     print("=== Selecting the transfer layer on mPower ONLY ===")
-    print(f"  cache   {CACHE}")
+    print(f"  cache   {cache}")
     print(f"  cohort  {len(y):,} recordings / {len(set(groups)):,} speakers "
           f"(PD {int((y == 1).sum())} / HC {int((y == 0).sum())}), age-matched")
     print(f"  layers  {n_layers}, scored by subject-disjoint 5-fold CV")
@@ -117,9 +122,10 @@ def main() -> None:
     print(f"\n  {verdict}")
 
     LOGS.mkdir(parents=True, exist_ok=True)
-    R.to_csv(LOGS / "select_transfer_layer.csv", index=False)
-    (LOGS / "select_transfer_layer.json").write_text(json.dumps({
-        "cache": CACHE, "seed": args.seed, "n_layers": n_layers,
+    tag = "" if args.cohort == "agematched" else f"__{args.cohort}"
+    R.to_csv(LOGS / f"select_transfer_layer{tag}.csv", index=False)
+    (LOGS / f"select_transfer_layer{tag}.json").write_text(json.dumps({
+        "cache": cache, "seed": args.seed, "n_layers": n_layers,
         "n_recordings": int(len(y)), "n_speakers": int(len(set(groups))),
         "best_layer": best, "best_auroc": round(best_auroc, 4),
         "current_layer": CURRENT_LAYER, "current_auroc": round(cur_auroc, 4),

@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import warnings
 
 import numpy as np
@@ -37,7 +38,9 @@ from pdvoice.config import EMBEDDINGS, LOGS
 from pdvoice.data import LOADERS
 from pdvoice.eval.discrimination import bootstrap_ci
 
-MODEL, LAYER = "xls-r-300m", 15
+MODEL = "xls-r-300m"
+LAYER = int(os.environ.get("PDV_LAYER", 15))  # Bridge2AI layer; 8 is chosen inside Bridge2AI (bridge2ai_layer_select.py)
+SUFFIX = "" if LAYER == 15 else f"__L{LAYER}"
 TASKS = ["vowel", "ddk", "speech"]
 
 
@@ -148,7 +151,7 @@ def main() -> None:
               flush=True)
         report[task] = res
 
-    (LOGS / "bridge2ai_agematch.json").write_text(json.dumps(report, indent=2))
+    (LOGS / f"bridge2ai_agematch{SUFFIX}.json").write_text(json.dumps(report, indent=2))
     print(f"\nwrote {LOGS / 'bridge2ai_agematch.json'}")
 
 

@@ -80,16 +80,19 @@ def extract(df: pd.DataFrame, tag: str) -> pd.DataFrame:
     return F
 
 
-def subject_level(ids, y, p) -> pd.DataFrame:
-    return (pd.DataFrame({"subject_id": ids, "y": y, "p": p})
-            .groupby("subject_id").agg(y=("y", "first"), p=("p", "mean")).reset_index())
+def subject_level(ids, y, pr) -> pd.DataFrame:
+    p, r = pr
+    return (pd.DataFrame({"subject_id": ids, "y": y, "p": p, "r": r})
+            .groupby("subject_id").agg(y=("y", "first"), p=("p", "mean"), r=("r", "mean"))
+            .reset_index())
 
 
-def evaluate(y, p, thr) -> dict:
-    lo, hi = bootstrap_ci(y, p)[1:]
+def evaluate(y, p, thr, r) -> dict:
+    # discrimination on the uncalibrated score r; calibration/threshold on p
+    lo, hi = bootstrap_ci(y, r)[1:]
     m = {"n_subjects": int(len(y)), "prevalence": round(float(np.mean(y)), 4),
-         "auroc": round(float(auroc(y, p)), 4), "auroc_ci": [round(lo, 4), round(hi, 4)],
-         "auprc": round(float(auprc(y, p)), 4)}
+         "auroc": round(float(auroc(y, r)), 4), "auroc_ci": [round(lo, 4), round(hi, 4)],
+         "auprc": round(float(auprc(y, r)), 4)}
     m.update({k: round(float(v), 4) for k, v in calibration_error(y, p).items()})
     m.update({k: (round(float(v), 4) if isinstance(v, float) else v)
               for k, v in threshold_metrics(y, p, thr).items()})
@@ -160,10 +163,11 @@ def main() -> None:
         def score(A):
             with torch.no_grad():
                 lg = head(torch.tensor(A, dtype=torch.float32, device=dev)).squeeze(-1)
-            return cal.predict_proba(lg.cpu().numpy())
+            lg = lg.cpu().numpy()
+            return cal.predict_proba(lg), cal.ranking(lg)
 
         s = subject_level(sub.subject_id, y, score(Xs))
-        within = evaluate(s.y.to_numpy(), s.p.to_numpy(), thr)
+        within = evaluate(s.y.to_numpy(), s.p.to_numpy(), thr, s.r.to_numpy())
         print(f"      within mPower      AUROC {within['auroc']:.3f} "
               f"{within['auroc_ci']}")
 
@@ -172,7 +176,7 @@ def main() -> None:
         for ds, (df, A) in ext.items():
             sj = subject_level(df.subject_id, df.label.astype(int).to_numpy(),
                                score(prep(A)))
-            m = evaluate(sj.y.to_numpy(), sj.p.to_numpy(), thr)
+            m = evaluate(sj.y.to_numpy(), sj.p.to_numpy(), thr, sj.r.to_numpy())
             m["transfer_drop_auroc"] = round(within["auroc"] - m["auroc"], 4)
             block["transfer"][ds] = m
             flag = "  <-- INVERTED" if m["auroc_ci"][1] < 0.5 else ""

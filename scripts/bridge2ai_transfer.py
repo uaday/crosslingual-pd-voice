@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import warnings
 from pathlib import Path
@@ -36,7 +37,9 @@ from pdvoice.cohort import age_match_ids, load_mpower_cohort  # noqa: E402
 from pdvoice.config import EMBEDDINGS, LOGS  # noqa: E402
 from pdvoice.data import LOADERS  # noqa: E402
 
-MODEL, LAYER = "xls-r-300m", 15
+MODEL = "xls-r-300m"
+LAYER = int(os.environ.get("PDV_LAYER", 15))  # Bridge2AI layer; 8 is chosen inside Bridge2AI (bridge2ai_layer_select.py)
+SUFFIX = "" if LAYER == 15 else f"__L{LAYER}"
 TARGETS = {"vowel": [("ipvs", "vowel"), ("neurovoz", "vowel"), ("mpower", "vowel")],
            "ddk": [("neurovoz", "ddk")],
            "speech": [("ipvs", "speech"), ("neurovoz", "speech"), ("mdvr_kcl", "speech")]}
@@ -74,7 +77,10 @@ def main() -> None:
     seeds = [int(s) for s in args.seeds.split(",")]
 
     base = LOADERS["bridge2ai"]()
-    mp_df, mp_X = mpower()
+    # mPower embeddings exist only at layers 15 and 24; at any other Bridge2AI layer the
+    # mPower rows are skipped (a head trained at one layer cannot score another).
+    have_mp = (EMBEDDINGS / f"mpower_full__{MODEL}__L{LAYER}.npz").exists()
+    mp_df, mp_X = mpower() if have_mp else (None, None)
     ext = {k: load_external(*k) for task in TARGETS for k in TARGETS[task] if k[0] != "mpower"}
     rows = []
 
@@ -88,6 +94,8 @@ def main() -> None:
                 s = src[m]
                 head, cal = train_locked(X[m], s.label.to_numpy(), s.subject_id.to_numpy(), seed)
                 for ds, ttask in targets:
+                    if ds == "mpower" and not have_mp:
+                        continue
                     if ds == "mpower":
                         tm = mp_df.subject_id.isin(age_match_ids(mp_df, seed=seed)).to_numpy()
                         p = score(head, cal, mp_X)
@@ -106,7 +114,7 @@ def main() -> None:
 
     # ---- into Bridge2AI (vowel), trained on mPower
     tgt, TX = bridge2ai("vowel", base)
-    for cohort in ("uncorrected", "age-matched"):
+    for cohort in (("uncorrected", "age-matched") if have_mp else ()):
         for seed in seeds:
             m = (np.ones(len(mp_df), bool) if cohort == "uncorrected"
                  else mp_df.subject_id.isin(age_match_ids(mp_df, seed=seed)).to_numpy())
@@ -120,12 +128,12 @@ def main() -> None:
         print(f"  mpower -> bridge2ai [{cohort}] done", flush=True)
 
     R = pd.DataFrame(rows)
-    R.to_csv(LOGS / "bridge2ai_transfer.csv", index=False)
+    R.to_csv(LOGS / f"bridge2ai_transfer{SUFFIX}.csv", index=False)
     agg = (R.groupby(["direction", "task", "target", "target_cohort", "source"]).auroc
              .agg(["mean", "std"]).round(3).unstack("source"))
     pd.set_option("display.width", 200)
     print("\n" + agg.to_string())
-    (LOGS / "bridge2ai_transfer.json").write_text(json.dumps(
+    (LOGS / f"bridge2ai_transfer{SUFFIX}.json").write_text(json.dumps(
         R.groupby(["direction", "task", "target", "target_cohort", "source"]).auroc.mean()
          .round(4).reset_index().to_dict("records"), indent=2))
     print(f"\nwrote {LOGS / 'bridge2ai_transfer.csv'}")

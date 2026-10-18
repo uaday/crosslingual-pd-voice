@@ -19,6 +19,41 @@ def _sigmoid(z: np.ndarray) -> np.ndarray:
     return 1.0 / (1.0 + np.exp(-z))
 
 
+class RankingMap:
+    """Strictly increasing map from logit to a common probability scale, for DISCRIMINATION.
+
+    Calibration must not change the ranking, but the isotonic map (which wins the
+    validation-Brier selection almost every time) is a step function that clips scores
+    outside its fitted range. Applied to a shifted external dataset it collapses distinct
+    scores into ties, and in the worst case gives every participant 0.5, so an AUROC computed
+    on calibrated probabilities can be forced to exactly 0.5. The raw logit has no ties, but
+    when out-of-fold predictions from several fold models are pooled, each model's logits sit
+    on their own scale. Platt scaling fitted on the same validation fold fixes both: it is
+    strictly increasing (no ties, ranking within a model unchanged) and puts every fold on a
+    common probability scale. If the fitted slope is not positive, the map falls back to the
+    sigmoid so that the ranking is never reversed.
+
+    AUROC, AUPRC and sensitivity at fixed specificity use this score; the selected
+    calibrator's probabilities are used for calibration, Brier, threshold and decision-curve
+    measures.
+    """
+
+    def fit(self, logits, y):
+        z = np.asarray(logits, dtype=float).reshape(-1, 1)
+        y = np.asarray(y)
+        self.a, self.b = 1.0, 0.0
+        if len(np.unique(y)) < 2:   # a small validation fold can hold one class only
+            return self
+        lr = LogisticRegression().fit(z, y)
+        a, b = float(lr.coef_[0, 0]), float(lr.intercept_[0])
+        if a > 0:
+            self.a, self.b = a, b
+        return self
+
+    def __call__(self, logits) -> np.ndarray:
+        return _sigmoid(self.a * np.asarray(logits, dtype=float) + self.b)
+
+
 class TemperatureScaler:
     """Single-parameter temperature scaling on logits."""
 
@@ -89,4 +124,5 @@ def select_best_by_brier(val_logits, y_val):
         brier = brier_score_loss(y_val, cal.predict_proba(val_logits))
         if brier < best_brier:
             best_name, best_cal, best_brier = name, cal, brier
+    best_cal.ranking = RankingMap().fit(val_logits, y_val)  # see RankingMap
     return best_name, best_cal

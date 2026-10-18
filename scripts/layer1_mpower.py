@@ -124,7 +124,7 @@ def run_cv(df: pd.DataFrame, X: np.ndarray, n_folds: int):
 
         oof.append(pd.DataFrame({
             "subject_id": df.loc[te, "subject_id"].to_numpy(),
-            "y": yte, "p": te_p, "fold": k,
+            "y": yte, "p": te_p, "r": cal.ranking(te_logits), "fold": k,
         }))
         print(f"      fold {k}: train={len(tr)} val={len(va)} test={len(te)} "
               f"calibrator={name}")
@@ -141,16 +141,17 @@ def evaluate_subject_level(oof: pd.DataFrame, outstem: str, model_key: str) -> d
     )
     from sklearn.metrics import brier_score_loss
 
-    subj = oof.groupby("subject_id").agg(y=("y", "first"), p=("p", "mean"),
+    subj = oof.groupby("subject_id").agg(y=("y", "first"), p=("p", "mean"), r=("r", "mean"),
                                          n_rec=("p", "size")).reset_index()
     subj.to_csv(LOGS / f"{outstem}__subject_preds.csv", index=False)
-    y, p = subj["y"].to_numpy(), subj["p"].to_numpy()
+    y, p, r = subj["y"].to_numpy(), subj["p"].to_numpy(), subj["r"].to_numpy()
 
-    auc, auc_lo, auc_hi = bootstrap_ci(y, p, metric=auroc)
-    ap, ap_lo, ap_hi = bootstrap_ci(y, p, metric=auprc)
+    # discrimination on the strictly increasing ranking map (calibration.RankingMap)
+    auc, auc_lo, auc_hi = bootstrap_ci(y, r, metric=auroc)
+    ap, ap_lo, ap_hi = bootstrap_ci(y, r, metric=auprc)
     thr = youden_threshold(y, p)   # NOTE: on OOF -> mildly optimistic; pilot only
     tm = threshold_metrics(y, p, thr)
-    sat90 = sensitivity_at_specificity(y, p, 0.90)
+    sat90 = sensitivity_at_specificity(y, r, 0.90)
     cal = calibration_error(y, p)
 
     metrics = {

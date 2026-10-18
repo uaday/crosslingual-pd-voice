@@ -23,7 +23,7 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).parent))
-from bridge2ai_transfer import auc, bridge2ai  # noqa: E402
+from bridge2ai_transfer import SUFFIX, auc, bridge2ai  # noqa: E402
 from demographic_erasure import load_external, score, train_locked  # noqa: E402
 
 from pdvoice.cohort import age_match_ids  # noqa: E402
@@ -71,7 +71,7 @@ def main() -> None:
                                          auroc=auc(sub, p[mask])))
             print(f"  {task} [{cohort}] done", flush=True)
     R = pd.DataFrame(rows)
-    R.to_csv(LOGS / "bridge2ai_transfer_agecheck.csv", index=False)
+    R.to_csv(LOGS / f"bridge2ai_transfer_agecheck{SUFFIX}.csv", index=False)
     agg = R.groupby(["task", "target", "target_subset", "source"]).agg(
         n_pd=("n_pd", "median"), n_hc=("n_hc", "median"),
         auroc=("auroc", "mean"), sd=("auroc", "std")).round(3).unstack("source")

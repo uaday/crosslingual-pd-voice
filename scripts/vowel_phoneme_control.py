@@ -85,7 +85,7 @@ def main() -> None:
         def score(E):
             with torch.no_grad():
                 lg = head(torch.tensor(E, dtype=torch.float32, device=dev)).squeeze(-1).cpu().numpy()
-            return cal.predict_proba(lg)
+            return cal.ranking(lg)  # discrimination: strictly increasing map, no ties (RankingMap)
 
         for ds, (edf, E, m_a) in ext.items():
             p = score(E)

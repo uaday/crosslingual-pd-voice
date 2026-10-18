@@ -121,25 +121,28 @@ def embed(df: pd.DataFrame, model_key: str, layer, cache_path: Path,
 
 
 def subject_level(oof):
-    return oof.groupby("subject_id").agg(y=("y", "first"), p=("p", "mean"),
+    return oof.groupby("subject_id").agg(y=("y", "first"), p=("p", "mean"), r=("r", "mean"),
                                          n_rec=("p", "size")).reset_index()
 
 
-def evaluate(y, p, locked_threshold):
+def evaluate(y, p, locked_threshold, r=None):
+    # p: calibrated probability (calibration, Brier, threshold measures)
+    # r: ranking score from calibration.RankingMap (discrimination); see calibration.RankingMap
+    r = p if r is None else r
     from pdvoice.eval.discrimination import auprc, auroc, bootstrap_ci
     from pdvoice.eval.metrics import (calibration_error, sensitivity_at_specificity,
                                       threshold_metrics)
     from sklearn.metrics import brier_score_loss
 
-    auc, alo, ahi = bootstrap_ci(y, p, metric=auroc)
-    ap, plo, phi = bootstrap_ci(y, p, metric=auprc)
+    auc, alo, ahi = bootstrap_ci(y, r, metric=auroc)
+    ap, plo, phi = bootstrap_ci(y, r, metric=auprc)
     ce = calibration_error(y, p)
     return {
         "n_subjects": int(len(y)), "n_pd": int((y == 1).sum()), "n_hc": int((y == 0).sum()),
         "auroc": auc, "auroc_ci": [alo, ahi], "auprc": ap, "auprc_ci": [plo, phi],
         "brier": float(brier_score_loss(y, p)), "ece": ce["ece"], "mce": ce["mce"],
         "at_locked_threshold": threshold_metrics(y, p, locked_threshold),
-        "sensitivity_at_90_spec": sensitivity_at_specificity(y, p, 0.90),
+        "sensitivity_at_90_spec": sensitivity_at_specificity(y, r, 0.90),
     }
 
 
@@ -198,12 +201,14 @@ def main() -> None:
     def score(X):
         with torch.no_grad():
             lg = model(torch.tensor(np.asarray(X), dtype=torch.float32, device=dev)).squeeze(-1)
-        return cal.predict_proba(lg.cpu().numpy())
+        lg = lg.cpu().numpy()
+        return cal.predict_proba(lg), cal.ranking(lg)
 
-    def eval_probs(df, p):
+    def eval_probs(df, pr):
+        p, r = pr
         subj = subject_level(pd.DataFrame(
-            {"subject_id": df["subject_id"], "y": df["label"].astype(int), "p": p}))
-        m = evaluate(subj["y"].to_numpy(), subj["p"].to_numpy(), thr)
+            {"subject_id": df["subject_id"], "y": df["label"].astype(int), "p": p, "r": r}))
+        m = evaluate(subj["y"].to_numpy(), subj["p"].to_numpy(), thr, subj["r"].to_numpy())
         m["transfer_drop_auroc"] = round(ceiling - m["auroc"], 3)
         return subj, m
 

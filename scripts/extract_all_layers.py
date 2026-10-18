@@ -40,9 +40,11 @@ MODELS = {
 WHISPER_FRAMES_PER_SEC = 50.0   # 30 s of audio -> 1500 encoder frames
 
 
-def build_cohort(seed=42):
-    """Age-matched, one recording per speaker. Identical for every encoder."""
+def build_cohort(seed=42, cohort="agematched"):
+    """One recording per speaker; age-matched, or the uncorrected (confounded) cohort."""
     df = load_mpower_cohort(cap=1, seed=seed)
+    if cohort == "confounded":
+        return df.dropna(subset=["age"]).reset_index(drop=True)
     keep = age_match_ids(df, seed=seed)
     return df[df.subject_id.isin(keep)].reset_index(drop=True)
 
@@ -91,16 +93,17 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", required=True, choices=sorted(MODELS))
     ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument("--cohort", default="agematched", choices=["agematched", "confounded"])
     args = ap.parse_args()
     warnings.simplefilter("ignore")
 
-    out = EMBEDDINGS / f"layersweep__{args.model}__agematched.npz"
+    out = EMBEDDINGS / f"layersweep__{args.model}__{args.cohort}.npz"
     if out.exists():
         d = np.load(out, allow_pickle=True)
         print(f"already present: {out.name}  X={d['X'].shape}")
         return
 
-    df = build_cohort(args.seed)
+    df = build_cohort(args.seed, args.cohort)
     print(f"cohort: {len(df):,} recordings / {df.subject_id.nunique():,} speakers "
           f"(PD {int((df.label == 1).sum()):,} / HC {int((df.label == 0).sum()):,})")
     _a = subject_age_stats(df)   # per speaker, not per recording

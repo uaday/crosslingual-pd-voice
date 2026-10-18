@@ -47,6 +47,27 @@ def cv_auroc(X, y, seed):
     return roc_auc_score(y, oof)
 
 
+def fold_projections(X, seed, k=5):
+    """Fixed, label-independent folds with each fold's scaler and PCA fitted once.
+
+    PCA never sees the labels, so with folds that do not depend on the labels (plain
+    KFold) the projection can be computed once and reused for every permutation; only the
+    logistic regression is refitted. This makes 1,000 permutations feasible on a CPU."""
+    from sklearn.model_selection import KFold
+    out = []
+    for tr, te in KFold(k, shuffle=True, random_state=seed).split(X):
+        pre = make_pipeline(StandardScaler(), PCA(64, random_state=seed)).fit(X[tr])
+        out.append((tr, te, pre.transform(X[tr]), pre.transform(X[te])))
+    return out
+
+
+def cv_auroc_fast(proj, y):
+    oof = np.zeros(len(y))
+    for tr, te, Ztr, Zte in proj:
+        oof[te] = LogisticRegression(max_iter=2000).fit(Ztr, y[tr]).predict_proba(Zte)[:, 1]
+    return roc_auc_score(y, oof)
+
+
 def permute_within(y, strata, rng):
     yp = y.copy()
     for s in np.unique(strata):
@@ -59,6 +80,7 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--n-perm", type=int, default=200)
     ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument("--fast", action="store_true", help="fixed folds, PCA fitted once (see fold_projections)")
     args = ap.parse_args()
     warnings.simplefilter("ignore")
 
@@ -74,7 +96,9 @@ def main() -> None:
     sex = df.sex.fillna("unknown").to_numpy()
     print(f"{len(df):,} participants (PD {y.sum():,} / HC {(y == 0).sum():,})")
 
-    observed = cv_auroc(X, y, args.seed)
+    proj = fold_projections(X, args.seed) if args.fast else None
+    score = (lambda yy, sd: cv_auroc_fast(proj, yy)) if args.fast else (lambda yy, sd: cv_auroc(X, yy, sd))
+    observed = score(y, args.seed)
     age_only = roc_auc_score(y, df.age.to_numpy())
     print(f"observed AUROC (PCA-64 logistic probe): {observed:.3f} | age alone: {age_only:.3f}")
 
@@ -84,8 +108,8 @@ def main() -> None:
               "within_age_x_sex": np.array([f"{a}_{s}" for a, s in zip(age_bin, sex)])}
     for i in range(args.n_perm):
         for k in nulls:
-            nulls[k].append(cv_auroc(X, permute_within(y, strata[k], rng), args.seed + i + 1))
-        if (i + 1) % 20 == 0:
+            nulls[k].append(score(permute_within(y, strata[k], rng), args.seed + i + 1))
+        if (i + 1) % 100 == 0:
             print(f"  {i + 1}/{args.n_perm}: " + "  ".join(
                 f"{k} mean {np.mean(v):.3f}" for k, v in nulls.items()), flush=True)
 
@@ -100,8 +124,10 @@ def main() -> None:
         print(f"{k:<18} null {v.mean():.3f} +/- {v.std():.3f} (95th {np.quantile(v, .95):.3f}) "
               f"-> observed {observed:.3f}, excess {observed - v.mean():+.3f}, "
               f"p = {res[k]['p_value']}")
-    (LOGS / "restricted_permutation.json").write_text(json.dumps(res, indent=2))
-    print(f"wrote {LOGS / 'restricted_permutation.json'}")
+    res["fast"] = bool(args.fast)
+    name = "restricted_permutation" + ("__fast" if args.fast else "") + (f"__n{args.n_perm}" if args.n_perm != 100 else "")
+    (LOGS / f"{name}.json").write_text(json.dumps(res, indent=2))
+    print(f"wrote {LOGS / (name + '.json')}")
 
 
 if __name__ == "__main__":

@@ -87,20 +87,18 @@ def f_depth() -> None:
     # five layers, so only five points exist; drawing a line through them would imply a
     # sweep that was not done. The contrast is the finding, so both are shown and the
     # asymmetry is stated in the caption rather than hidden by interpolation.
-    conf = []
-    for stem, layer in (("L9", 9), ("L11", 11), ("L12", 12), ("L15", 15),
-                        ("LNone", n_layers - 1)):
-        p = LOGS / f"layer1_mpower__xls-r-300m__cap3__{stem}.json"
-        if p.exists():
-            conf.append((layer, json.loads(p.read_text())["auroc"]))
+    # Both curves now come from the same script, head and cross-validation
+    # (select_transfer_layer.py --cohort agematched / confounded), one recording per speaker.
+    c = pd.read_csv(LOGS / "select_transfer_layer__confounded.csv").sort_values("layer")
+    conf = list(zip(c["layer"], c["auroc"]))
 
     fig, ax = plt.subplots(figsize=(6.0, 3.3))
     ax.plot(d[lc], d[ac], "-o", ms=3, color=C_MATCH,
-            label="Age-matched cohort (all layers)")
+            label="Age-matched cohort")
     if conf:
         cx, cy = zip(*conf)
-        ax.plot(cx, cy, "s--", ms=5, color=C_CONF, alpha=0.9,
-                label="Confounded cohort (5 layers run)")
+        ax.plot(cx, cy, "s--", ms=3, color=C_CONF, alpha=0.9,
+                label="Confounded cohort")
     ax.axhline(0.5, color="k", lw=0.8, ls="--")
     ax.text(0.2, 0.505, "chance", fontsize=7)
 
@@ -115,7 +113,7 @@ def f_depth() -> None:
     if conf:
         lx, ly = conf[-1]
         ax.annotate(f"same layer,\nconfounded: {ly:.3f}", (lx, ly),
-                    textcoords="offset points", xytext=(-72, 2), fontsize=7.5,
+                    textcoords="offset points", xytext=(-60, -42), fontsize=7.5,
                     arrowprops=dict(arrowstyle="->", lw=0.7))
     ax.set_xlabel("Encoder layer"); ax.set_ylabel("Subject-level AUROC")
     ax.set_ylim(0.48, 0.88)

@@ -27,6 +27,7 @@ Run:  .venv\\Scripts\\python.exe -u scripts\\bridge2ai_followups.py
 from __future__ import annotations
 
 import json
+import os
 import sys
 import warnings
 from pathlib import Path
@@ -50,7 +51,9 @@ from pdvoice.cohort import age_match_ids, demographic_match_ids  # noqa: E402
 from pdvoice.config import BRIDGE2AI_DIR, EMBEDDINGS, LOGS  # noqa: E402
 from pdvoice.data import LOADERS  # noqa: E402
 
-MODEL, LAYER = "xls-r-300m", 15
+MODEL = "xls-r-300m"
+LAYER = int(os.environ.get("PDV_LAYER", 15))  # Bridge2AI layer; 8 is chosen inside Bridge2AI (bridge2ai_layer_select.py)
+SUFFIX = "" if LAYER == 15 else f"__L{LAYER}"
 SEEDS = [42, 43, 44, 45, 46]
 READ = {"rainbow-passage", "rainbowpassage", "caterpillar-passage", "cape-v-sentences",
         "harvard-sentences-list"}
@@ -228,7 +231,7 @@ def main() -> None:
         report["C_specificity"][task] = res
         print(f"C {task:<12} {json.dumps(res)}", flush=True)
 
-    (LOGS / "bridge2ai_followups.json").write_text(json.dumps(report, indent=2))
+    (LOGS / f"bridge2ai_followups{SUFFIX}.json").write_text(json.dumps(report, indent=2))
     print(f"wrote {LOGS / 'bridge2ai_followups.json'}")
 
 
