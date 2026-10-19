@@ -145,28 +145,9 @@ def a_seeds():
     return longtable("llrrrr", ["Cohort", "Seed", "Within", "IPVS", "NeuroVoz", "MDVR-KCL"],
                      [[b] if "multicolumn" in b else b.split(" & ") for b in body],
                      "Per-seed results of the five-seed experiments behind "
-                     "Table~\\ref{tab:master}: within mPower at the final layer and transfer at "
-                     "layer 15, MLP head.", "tab:appA-seeds")
-
-
-def a_speech():
-    d = pd.DataFrame(_j("speech_agematch.json")["runs"])
-    tg = [c for c in d.columns if c.startswith("-> ")]
-    rows = []
-    for src in ("mdvr_kcl", "neurovoz", "ipvs"):
-        for t in tg:
-            cells = []
-            for coh in ("full", "age-matched", "size-matched random"):
-                v = d[(d.source == src) & (d.cohort == coh)][t].dropna()
-                cells.append(f"{v.mean():.3f} $\\pm$ {v.std(ddof=1):.3f}" if len(v) else "--")
-            if all(c == "--" for c in cells):
-                continue
-            rows.append([f"{NAMES[src]} $\\rightarrow$ {NAMES[t[3:]]}"] + cells)
-    return longtable("p{4.2cm}p{3.0cm}p{3.0cm}p{3.0cm}",
-                     ["Direction", "Unmatched", "Age-matched", "Size-matched random"], rows,
-                     "Connected-speech transfer of design B by direction, mean $\\pm$ SD over "
-                     "five seeds, layer 15.", "tab:appA-speech",
-                     "MDVR-KCL has no age data, so it cannot be age-matched as a training dataset.")
+                     "Table~\\ref{tab:master}, MLP head. Within mPower and transfer are both at "
+                     "layer 15, except the within-mPower figures of the two adaptation blocks, "
+                     "which are at the final layer.", "tab:appA-seeds")
 
 
 def a_classifiers():
@@ -249,7 +230,6 @@ def appendix_a():
         "\\section{Locked Transfer Runs}", a_transfer(), "",
         "\\section{Layer Sweeps}", a_layers(), "",
         "\\section{Five-Seed Experiments}", a_seeds(), "",
-        "\\section{Connected-Speech Transfer}", a_speech(), "",
         "\\section{Classifier Comparison}", a_classifiers(), "",
         "\\section{Decision Curves}", a_dca(), "",
         "\\section{IPVS Diagnostics}", a_ipvs(), "",
@@ -302,18 +282,17 @@ SAMPLES = [
      "disease, healthy control or another disorder (Section~\\ref{subsec:bridge2ai}).",
      "data/bridge2ai.py", ["bridge2ai_participants"]),
     ("Participant-disjoint splits", "Folds that never place one participant in two partitions.",
-     "data/splits.py", ["assign_folds", "train_val_test_indices", "assert_disjoint"]),
+     "data/splits.py", ["assign_folds"]),
     ("Classifier head", "The 256-unit head of Equation~\\ref{eq:head} and its training loop.",
      "models/head.py", ["build_head", "fit_mlp_head"]),
-    ("Calibration", "The three calibration maps and selection by validation Brier score "
+    ("Calibration", "The three calibration maps, selection by validation Brier score, and the "
+     "strictly increasing ranking map used for AUROC, AUPRC and sensitivity "
      "(Section~\\ref{sec:calibration}).",
      "calibration.py", ["TemperatureScaler", "PlattScaler", "IsotonicCalibrator",
-                        "select_best_by_brier"]),
-    ("Evaluation", "DeLong's and McNemar's tests, calibration error and net benefit "
-     "(Section~\\ref{sec:measures}).",
+                        "RankingMap", "select_best_by_brier"]),
+    ("Significance tests", "DeLong's and McNemar's tests (Section~\\ref{subsec:significance}). "
+     "The other measures follow the formulas of Section~\\ref{sec:measures} directly.",
      "eval/discrimination.py", ["delong_roc_test", "mcnemar_test"]),
-    ("", "", "eval/metrics.py", ["calibration_error", "sensitivity_at_specificity"]),
-    ("", "", "eval/dca.py", ["net_benefit"]),
 ]
 
 
