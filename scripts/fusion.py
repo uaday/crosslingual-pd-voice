@@ -41,7 +41,7 @@ from pdvoice.eval.metrics import youden_threshold
 from pdvoice.features.classical import FEATURE_NAMES
 from pdvoice.models.head import fit_mlp_head
 
-MODEL, LAYER, CAP = "xls-r-300m", 15, 1
+MODEL, LAYER, CAP = "xls-r-300m", 11, 1
 FEATS = FEATURE_NAMES
 
 
@@ -169,8 +169,8 @@ def main():
                   f"{t['p_bootstrap']:>9.3f}{verdict}")
         print()
 
-    (LOGS / "fusion__xls-r-300m__L15.json").write_text(json.dumps(results, indent=2))
-    print(f"wrote {LOGS / 'fusion__xls-r-300m__L15.json'}")
+    (LOGS / f"fusion__xls-r-300m__L{LAYER}.json").write_text(json.dumps(results, indent=2))
+    print("wrote fusion json")
 
 
 if __name__ == "__main__":

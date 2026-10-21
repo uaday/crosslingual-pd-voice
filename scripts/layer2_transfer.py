@@ -27,7 +27,7 @@ from sklearn.model_selection import GroupShuffleSplit
 
 from pdvoice.config import EMBEDDINGS, FIGURES, LOGS, SEED, VAL_FRACTION, ensure_dirs
 from pdvoice.data import LOADERS
-from pdvoice.cohort import load_mpower_cohort
+from pdvoice.cohort import age_match_ids, load_mpower_cohort
 from pdvoice.preprocess import WINDOW_MODES, quality_control
 
 def _mpower_ceiling(model: str = "xls-r-300m", cap: int = 3, layer=None,
@@ -67,6 +67,29 @@ def _mpower_ceiling(model: str = "xls-r-300m", cap: int = 3, layer=None,
 
 
 # ------------------------------------------------------------------ embedding (cached)
+def _slice_all_layers(ds: str, model_key: str, task: str, layer, df: pd.DataFrame,
+                      cache_path: Path) -> None:
+    """Build a single-layer cache from <ds>__<model>__<task>__Lall.npz, if that exists.
+
+    Bridge2AI was embedded once at every layer (scripts/extract_bridge2ai_layers.py) with
+    the same pre-processing as every other dataset: central 2 s of a vowel, 5 s windows
+    averaged otherwise, mean+std pooling. Slicing one layer from it gives exactly the
+    embedding embed() would compute, without a second pass over the audio.
+    """
+    src = EMBEDDINGS / f"{ds}__{model_key}__{task}__Lall.npz"
+    if cache_path.exists() or not src.exists():
+        return
+    d = np.load(src, allow_pickle=True)
+    row = {pth: i for i, pth in enumerate(d["path"].astype(str))}
+    missing = [pth for pth in df.path if pth not in row]
+    if missing:
+        raise SystemExit(f"{src.name} lacks {len(missing)} recordings of this cohort")
+    li = 24 if layer is None else int(layer)
+    X = d["X"][[row[pth] for pth in df.path], li].astype(np.float16)
+    np.savez_compressed(cache_path, X=X, path=df.path.to_numpy().astype(str))
+    print(f"      built {cache_path.name} from {src.name} (layer index {li})")
+
+
 def embed(df: pd.DataFrame, model_key: str, layer, cache_path: Path,
           window: str = "current") -> np.ndarray:
     """Order-aligned pooled embeddings for df, cached to cache_path (keys 'X', 'path').
@@ -227,18 +250,46 @@ def main() -> None:
             print(f"      no '{args.task}' recordings in {ds} — skipping")
             continue
         df, _ = quality_control(df)
+        if ds == "bridge2ai":
+            # Parkinson's disease against healthy controls only, as for every other test
+            # set; participants with other conditions (label <NA>) belong to the
+            # specificity analysis, not to Design A.
+            df = df[df["label"].notna()]
         df = df.reset_index(drop=True)
         cache = EMBEDDINGS / f"{ds}__{args.model}__{args.task}__L{args.layer}{wtag}.npz"
-        X = embed(df, args.model, args.layer, cache, args.window)
+        allf = EMBEDDINGS / f"{ds}__{args.model}__{args.task}__Lall.npz"
+        if args.window == "current" and allf.exists():
+            # one layer sliced straight from the all-layer cache, matched on path
+            d_all = np.load(allf, allow_pickle=True)
+            row = {pth: i for i, pth in enumerate(d_all["path"].astype(str))}
+            li = 24 if args.layer is None else int(args.layer)
+            X = d_all["X"][[row[pth] for pth in df.path], li]
+            print(f"      sliced layer {li} of {allf.name}: X={X.shape}")
+        else:
+            X = embed(df, args.model, args.layer, cache, args.window)
         y_rec = df["label"].astype(int).to_numpy()
         stem = f"layer2__{args.model}__{ds}__{args.task}__L{args.layer}{wtag}"
 
-        subj_b, m_b = eval_probs(df, score(X))
+        pr = score(X)
+        subj_b, m_b = eval_probs(df, pr)
         m_b["dataset"] = ds
         m_b["language"] = str(df["language"].iloc[0])
         rec = {"dataset": ds, "language": m_b["language"], "before": m_b}
         (LOGS / f"{stem}.json").write_text(json.dumps(m_b, indent=2))
         subj_b.to_csv(LOGS / f"{stem}__subject_preds.csv", index=False)
+
+        if ds == "bridge2ai" and args.adapt == "none":
+            # Bridge2AI carries the same age gap as mPower, in the same direction, so a model
+            # that learned age is rewarded on it. Score the SAME locked predictions again on
+            # an age-matched subset (five-year bins, as everywhere else) to separate the two.
+            keep = df.subject_id.isin(age_match_ids(df, seed=SEED)).to_numpy()
+            subj_m, m_m = eval_probs(df[keep].reset_index(drop=True),
+                                     (pr[0][keep], pr[1][keep]))
+            m_m["dataset"], m_m["language"] = ds, m_b["language"]
+            m_m["target_cohort"] = "age-matched"
+            (LOGS / f"{stem}__agematched-target.json").write_text(json.dumps(m_m, indent=2))
+            subj_m.to_csv(LOGS / f"{stem}__agematched-target__subject_preds.csv", index=False)
+            print(f"      age-matched target: {m_m['n_pd']}/{m_m['n_hc']}  AUROC {m_m['auroc']:.3f}")
 
         if args.adapt != "none":
             n_hc = int((y_rec == 0).sum())

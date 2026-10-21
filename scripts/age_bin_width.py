@@ -35,7 +35,7 @@ WIDTHS = [2, 5, 10]
 
 
 def mpower():
-    d = np.load(EMBEDDINGS / "mpower_full__xls-r-300m__L15.npz", allow_pickle=True)
+    d = np.load(EMBEDDINGS / "mpower_full__xls-r-300m__L11.npz", allow_pickle=True)
     emb = pd.DataFrame({"path": d["path"].astype(str)})
     emb["row"] = np.arange(len(emb))
     df = load_mpower_cohort(cap=1, seed=42).merge(emb, on="path", how="inner")

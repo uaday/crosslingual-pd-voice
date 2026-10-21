@@ -53,7 +53,7 @@ from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
 MODEL = "xls-r-300m"
-LAYERS = [15, 24]
+LAYERS = [11, 24]
 
 
 def load_mpower_layer(layer):
@@ -194,7 +194,7 @@ def main() -> None:
     # ---------------- cross-dataset: language / corpus / task -------------------
     print(f"\n=== CROSS-DATASET (task held constant: sustained vowel) ===", flush=True)
     Xs, langs, dsets, sids_all = [], [], [], []
-    Xm, sm, _ = load_mpower_layer(15)
+    Xm, sm, _ = load_mpower_layer(11)
     k = one_per_subject(sm, args.seed)[:600]
     Xs.append(Xm[k]); langs += ["en"] * len(k); dsets += ["mpower"] * len(k)
     sids_all += list(sm[k])
@@ -202,18 +202,18 @@ def main() -> None:
         edf = LOADERS[ds]()
         edf = edf[edf.task_kind == "vowel"].copy()
         edf, _ = quality_control(edf); edf = edf.reset_index(drop=True)
-        E = np.load(EMBEDDINGS / f"{ds}__{MODEL}__vowel__L15.npz")["X"].astype(np.float32)
+        E = np.load(EMBEDDINGS / f"{ds}__{MODEL}__vowel__L11.npz")["X"].astype(np.float32)
         assert len(E) == len(edf)
         Xs.append(E); langs += [lang] * len(E); dsets += [ds] * len(E)
         sids_all += list(edf.subject_id)
     Xc = np.vstack(Xs)
     acc, ch = probe_multiclass(Xc, np.array(langs), np.array(sids_all))
-    results.append(dict(layer=15, attribute="language (3-way)", cohort="pooled vowel",
+    results.append(dict(layer=11, attribute="language (3-way)", cohort="pooled vowel",
                         metric="accuracy", value=round(acc, 4),
                         extra=f"chance {ch:.2f}", chance=ch))
     print(f"  language       accuracy = {acc:.3f}   (chance {ch:.2f})")
     acc2, ch2 = probe_multiclass(Xc, np.array(dsets), np.array(sids_all))
-    results.append(dict(layer=15, attribute="corpus identity (3-way)", cohort="pooled vowel",
+    results.append(dict(layer=11, attribute="corpus identity (3-way)", cohort="pooled vowel",
                         metric="accuracy", value=round(acc2, 4),
                         extra=f"chance {ch2:.2f}", chance=ch2))
     print(f"  corpus         accuracy = {acc2:.3f}   (chance {ch2:.2f})")
@@ -225,14 +225,14 @@ def main() -> None:
     for task in ("vowel", "speech"):
         sub = edf[edf.task_kind == task].copy()
         sub, _ = quality_control(sub); sub = sub.reset_index(drop=True)
-        E = np.load(EMBEDDINGS / f"neurovoz__{MODEL}__{task}__L15.npz")["X"].astype(np.float32)
+        E = np.load(EMBEDDINGS / f"neurovoz__{MODEL}__{task}__L11.npz")["X"].astype(np.float32)
         assert len(E) == len(sub)
         parts.append((E, sub))
     Xt = np.vstack([p[0] for p in parts])
     yt = np.r_[np.zeros(len(parts[0][0])), np.ones(len(parts[1][0]))].astype(int)
     gt = np.r_[parts[0][1].subject_id.to_numpy(), parts[1][1].subject_id.to_numpy()]
     a_task = probe_binary(Xt, yt, gt)
-    results.append(dict(layer=15, attribute="task (vowel vs speech)", cohort="NeuroVoz",
+    results.append(dict(layer=11, attribute="task (vowel vs speech)", cohort="NeuroVoz",
                         metric="AUROC", value=round(a_task, 4), extra="", chance=0.5))
     print(f"  task           AUROC = {a_task:.3f}")
 
@@ -251,7 +251,7 @@ def main() -> None:
     print(f"\n{'='*96}\nWHICH LAYER IS MORE INVARIANT TO NUISANCE?\n{'='*96}")
     piv = R[R.layer.isin(LAYERS)].pivot_table(index="attribute", columns="layer", values="value")
     if piv.shape[1] == 2:
-        piv["L24 - L15"] = (piv[24] - piv[15]).round(4)
+        piv["L24 - L11"] = (piv[24] - piv[11]).round(4)
         print(piv.round(4).to_string())
     print(f"\nwrote {LOGS / 'embedding_probes.csv'}")
 
