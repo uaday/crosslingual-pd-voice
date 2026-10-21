@@ -46,7 +46,7 @@ from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
 
-MODEL, LAYER = "xls-r-300m", 15
+MODEL, LAYER = "xls-r-300m", 11
 FEATS = FEATURE_NAMES
 
 

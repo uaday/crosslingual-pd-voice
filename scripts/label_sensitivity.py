@@ -56,6 +56,24 @@ WITHIN_LAYER = 24     # last layer -- best within mPower (chosen on within-CV, n
 TRANSFER_LAYER = 15   # best transfer layer
 CAP = 3
 EXTERNALS = [("ipvs", "vowel"), ("neurovoz", "vowel"), ("mdvr_kcl", "speech")]
+# Bridge2AI is the fourth Design A test set (English, clinician labels). It is scored twice:
+# as released, where patients are ~29 years older than controls (the same gap as mPower),
+# and on an age-matched subset. It is not part of the three-dataset mean transfer, which
+# keeps its original definition.
+B2AI_TASK = "vowel"
+
+
+def load_bridge2ai(layer):
+    """Bridge2AI PD and healthy controls, with the requested layer sliced from the
+    all-layer cache (same pre-processing as every other dataset)."""
+    edf = LOADERS["bridge2ai"]()
+    edf = edf[edf["task_kind"] == B2AI_TASK].copy()
+    edf, _ = quality_control(edf)
+    edf = edf[edf["label"].notna()].reset_index(drop=True)
+    d = np.load(EMBEDDINGS / f"bridge2ai__{MODEL}__{B2AI_TASK}__Lall.npz", allow_pickle=True)
+    row = {p: i for i, p in enumerate(d["path"].astype(str))}
+    EX = d["X"][[row[p] for p in edf.path], layer].astype(np.float32)
+    return edf, EX
 
 
 def load_full(layer):
@@ -150,6 +168,9 @@ def transfer_aurocs(sub, X, y, ext_cache, seed, adapt="none"):
                           "p": cal.ranking(lg)})
         g = s.groupby("s").agg(y=("y", "first"), p=("p", "mean"))
         out[ds] = auroc(g["y"], g["p"])
+        if ds == "bridge2ai":
+            keep = g.index.isin(age_match_ids(edf, seed=seed))
+            out["bridge2ai_matched"] = auroc(g["y"][keep], g["p"][keep])
     return out
 
 
@@ -183,6 +204,8 @@ def main() -> None:
         EX = np.load(EMBEDDINGS / f"{ds}__{MODEL}__{task}__L{args.transfer_layer}.npz")["X"].astype(np.float32)
         assert len(EX) == len(edf), f"{ds}: {len(EX)} != {len(edf)}"
         ext_cache.append((ds, edf, EX))
+    b_edf, b_EX = load_bridge2ai(args.transfer_layer)
+    ext_cache.append(("bridge2ai", b_edf, b_EX))
 
     print(f"=== mPower label vs age sensitivity | {len(seeds)} seeds ===")
     print(f"  pool {len(df):,} recordings / {df.subject_id.nunique():,} speakers")
@@ -221,7 +244,9 @@ def main() -> None:
     rows = [{"scenario": n, "PD/HC": f"{runs[n][0]['n_pd']}/{runs[n][0]['n_hc']}",
              "within": ms(n, "within"),
              "ipvs": ms(n, "transfer_ipvs"), "neurovoz": ms(n, "transfer_neurovoz"),
-             "mdvr_kcl": ms(n, "transfer_mdvr_kcl")} for n in runs]
+             "mdvr_kcl": ms(n, "transfer_mdvr_kcl"),
+             "bridge2ai": ms(n, "transfer_bridge2ai"),
+             "bridge2ai_matched": ms(n, "transfer_bridge2ai_matched")} for n in runs]
     summary = pd.DataFrame(rows)
     pd.set_option("display.width", 200)
     print(summary.to_string(index=False))

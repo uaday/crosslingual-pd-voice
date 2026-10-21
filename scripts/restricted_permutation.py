@@ -35,7 +35,7 @@ from sklearn.preprocessing import StandardScaler
 from pdvoice.cohort import attach_sex, load_mpower_cohort
 from pdvoice.config import EMBEDDINGS, LOGS
 
-MODEL, LAYER = "xls-r-300m", 15
+MODEL, LAYER = "xls-r-300m", 11
 
 
 def cv_auroc(X, y, seed):
@@ -125,7 +125,7 @@ def main() -> None:
               f"-> observed {observed:.3f}, excess {observed - v.mean():+.3f}, "
               f"p = {res[k]['p_value']}")
     res["fast"] = bool(args.fast)
-    name = "restricted_permutation" + ("__fast" if args.fast else "") + (f"__n{args.n_perm}" if args.n_perm != 100 else "")
+    name = f"restricted_permutation__L{LAYER}" + ("__fast" if args.fast else "") + (f"__n{args.n_perm}" if args.n_perm != 100 else "")
     (LOGS / f"{name}.json").write_text(json.dumps(res, indent=2))
     print(f"wrote {LOGS / (name + '.json')}")
 

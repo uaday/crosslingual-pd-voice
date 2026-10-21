@@ -26,7 +26,8 @@ from pdvoice.config import LOGS
 ROOT = Path(__file__).resolve().parents[1]
 THESIS = ROOT / "thesis"
 SRC = ROOT / "src" / "pdvoice"
-NAMES = {"ipvs": "IPVS", "neurovoz": "NeuroVoz", "mdvr_kcl": "MDVR-KCL"}
+NAMES = {"ipvs": "IPVS", "neurovoz": "NeuroVoz", "mdvr_kcl": "MDVR-KCL",
+         "bridge2ai": "Bridge2AI"}
 TASKS = {"vowel": "vowel", "speech": "speech", "ddk": "DDK"}
 
 
@@ -35,7 +36,7 @@ def _j(name):
 
 
 def longtable(cols, header, rows, caption, label, note=""):
-    out = ["{\\small\\setlength{\\tabcolsep}{3pt}", f"\\begin{{longtable}}{{{cols}}}",
+    out = ["{\\footnotesize\\setlength{\\tabcolsep}{3pt}", f"\\begin{{longtable}}{{{cols}}}",
            f"\\caption{{{caption}}}\\label{{{label}}} \\\\", "\\toprule",
            " & ".join(f"\\textbf{{{h}}}" for h in header) + " \\\\", "\\midrule",
            "\\endfirsthead",
@@ -54,8 +55,8 @@ def longtable(cols, header, rows, caption, label, note=""):
 def a_transfer():
     rows = []
     for f in sorted(LOGS.glob("layer2__xls-r-300m__*.json")):
-        m = re.match(r"layer2__xls-r-300m__(\w+?)__(\w+?)__L(\w+?)(__Wfull)?(__adapt-[\w-]+)?\.json",
-                     f.name)
+        m = re.match(r"layer2__xls-r-300m__(\w+?)__(\w+?)__L(\w+?)(__Wfull)?"
+                     r"(__adapt-[\w-]+|__agematched-target)?\.json", f.name)
         if not m:
             continue
         ds, task, layer, wfull, adapt = m.groups()
@@ -65,29 +66,33 @@ def a_transfer():
         cfg = f"L{layer}, {'whole file' if wfull else 'fixed window'}"
         if adapt:
             cfg += ", " + {"__adapt-hc-centroid": "HC centroid",
-                           "__adapt-hc-standardize": "HC standardise"}[adapt]
-        a = f"{d['auroc']:.3f} [{lo:.3f}, {hi:.3f}]"
+                           "__adapt-hc-standardize": "HC standardise",
+                           "__agematched-target": "age-matched test set"}[adapt]
+        a, c = f"{d['auroc']:.3f}", f"[{lo:.3f}, {hi:.3f}]"
         if hi < 0.5:
-            a = f"\\textbf{{{a}}}"
+            a, c = f"\\textbf{{{a}}}", f"\\textbf{{{c}}}"
         s90 = d["sensitivity_at_90_spec"]
         s90 = s90["sensitivity"] if isinstance(s90, dict) else s90
-        rows.append([f"{NAMES[ds]} / {TASKS[task]}", cfg, f"{d['n_pd']}/{d['n_hc']}", a,
+        rows.append([f"{NAMES[ds]} / {TASKS[task]}", cfg, f"{d['n_pd']}/{d['n_hc']}", a, c,
                      f"{d['auprc']:.3f}", f"{d['ece']:.3f}", f"{d['brier']:.3f}",
                      f"{s90:.3f}"])
-    n_inv = sum(r[3].startswith("\\textbf") for r in rows)
+    runs = [r for r in rows if "age-matched test set" not in r[1]]
+    n_inv = sum(r[3].startswith("\\textbf") for r in runs)
     return longtable(
-        "p{2.4cm}p{3.0cm}rp{2.9cm}rrrr",
-        ["Dataset / task", "Configuration", "PD/HC", "AUROC [95\\% CI]", "AUPRC", "ECE", "Brier",
+        "P{2.1cm}P{2.75cm}rrcrrrr",
+        ["Dataset / task", "Configuration", "PD/HC", "AUROC", "95\\% CI", "AUPRC", "ECE", "Brier",
          "Sens."],
         rows,
-        f"All {len(rows)} locked transfer runs of design A. The model is trained on mPower "
+        f"All {len(runs)} single-run configurations of Experiment 1 across layers, windows and adaptation. The model is trained on mPower "
         "sustained vowels (uncorrected cohort, three recordings per participant) and applied "
         "unchanged to each external dataset.",
         "tab:appA-transfer",
-        f"Bold: the whole confidence interval lies below 0.5 ({n_inv} of {len(rows)} runs). "
+        f"Bold: the whole confidence interval lies below 0.5 ({n_inv} of {len(runs)} runs). "
         "Sens.: sensitivity at a specificity of at least 0.90. L24 is the final layer. HC "
         "centroid and HC standardise are the healthy-control adaptations of "
-        "Section~\\ref{subsec:variants}.")
+        "Section~\\ref{subsec:variants}. Rows marked age-matched test set rescore the same "
+        "locked Bridge2AI predictions on patients and controls matched on age; they are "
+        "not counted as separate runs. Bridge2AI was embedded with the fixed window only.")
 
 
 def a_layers():
@@ -115,39 +120,33 @@ def a_layers():
 
 
 def a_seeds():
-    blocks = [("label_sensitivity.json", "Label and age interventions"),
-              ("label_sensitivity__agesex.json", "Age and sex matching"),
-              ("label_sensitivity__adapt_centroid.json", "With HC centroid adaptation"),
-              ("label_sensitivity__adapt_standardize.json",
-               "With HC standardise adaptation")]
-    names = {"baseline": "uncorrected", "confident": "confident labels", "age50": "aged 50+",
+    """Per-seed results of Experiment 1 (unified layer-11 protocol)."""
+    import pandas as pd
+    R = pd.read_csv(LOGS / "unified" / "runs.csv")
+    W = R[(R.exp == "within") & (R.source == "mpower")]
+    E = R[R.exp == "exp1"]
+    cols = [("ipvs", "vowel", "released"), ("neurovoz", "vowel", "released"),
+            ("mdvr_kcl", "speech", "released"), ("bridge2ai", "vowel", "released"),
+            ("bridge2ai", "vowel", "agematched")]
+    names = {"uncorrected": "uncorrected", "confident": "confident labels",
              "agematched": "age-matched", "agesexmatched": "age- and sex-matched"}
-    rows, seen = [], set()
-    for fn, title in blocks:
-        d = _j(fn)
-        rows.append([f"\\multicolumn{{6}}{{l}}{{\\emph{{{title}}}}}", "", "", "", "", ""])
-        for sc, runs in d["runs"].items():
-            key = (sc, d.get("adapt", "none"))
-            if fn != "label_sensitivity.json" and sc == "baseline" and d.get("adapt", "none") == "none":
-                continue                       # identical to the first block
-            if key in seen and d.get("adapt", "none") == "none":
-                continue
-            seen.add(key)
-            for r in runs:
-                rows.append([names.get(sc, sc), str(r["seed"]), f"{r['within']:.3f}",
-                             f"{r.get('transfer_ipvs', float('nan')):.3f}",
-                             f"{r.get('transfer_neurovoz', float('nan')):.3f}",
-                             f"{r.get('transfer_mdvr_kcl', float('nan')):.3f}"])
-    rows = [r if not r[0].startswith("\\multicolumn") else [r[0]] for r in rows]
-    body = []
-    for r in rows:
-        body.append(r[0] if len(r) == 1 else " & ".join(r))
-    return longtable("llrrrr", ["Cohort", "Seed", "Within", "IPVS", "NeuroVoz", "MDVR-KCL"],
-                     [[b] if "multicolumn" in b else b.split(" & ") for b in body],
-                     "Per-seed results of the five-seed experiments behind "
-                     "Table~\\ref{tab:master}, MLP head. Within mPower and transfer are both at "
-                     "layer 15, except the within-mPower figures of the two adaptation blocks, "
-                     "which are at the final layer.", "tab:appA-seeds")
+    rows = []
+    for cond in ("uncorrected", "confident", "agematched", "agesexmatched"):
+        for seed in sorted(W.seed.unique()):
+            w = W[(W.condition == cond) & (W.seed == seed)].auroc
+            cells = []
+            for t, tt, coh in cols:
+                v = E[(E.condition == cond) & (E.seed == seed) & (E.target == t)
+                      & (E.target_task == tt) & (E.target_cohort == coh)].auroc
+                cells.append(f"{v.iloc[0]:.3f}" if len(v) else "--")
+            rows.append([names[cond], str(seed), f"{w.iloc[0]:.3f}" if len(w) else "--", *cells])
+    return longtable("llrrrrrr", ["Cohort", "Seed", "Within", "IPVS", "NeuroVoz", "MDVR-KCL",
+                                  "B2AI", "B2AI matched"], rows,
+                     "Per-seed results of Experiment 1 behind Table~\\ref{tab:master}: layer 11, "
+                     "the framework head. Within: mPower cross-validation. IPVS and NeuroVoz: "
+                     "sustained vowels; MDVR-KCL: connected speech; B2AI: Bridge2AI vowels as "
+                     "released; B2AI matched: the same predictions on an age-matched Bridge2AI "
+                     "subset.", "tab:appA-seeds")
 
 
 def a_classifiers():
@@ -156,7 +155,7 @@ def a_classifiers():
             for r in c.itertuples()]
     return longtable("llp{3.6cm}rr", ["Cohort", "Features", "Classifier", "AUROC", "95\\% CI"],
                      rows, "All classifier and feature combinations, one recording per "
-                     "participant, layer 15 for the embeddings.", "tab:appA-classifiers")
+                     "participant, layer 11 for the embeddings.", "tab:appA-classifiers")
 
 
 def a_dca():
@@ -227,9 +226,9 @@ def appendix_a():
         "Chapters~\\ref{chap:existing} and~\\ref{chap:proposed}. Every table is generated "
         "from the logs that the analyses wrote, so the values match the text exactly. "
         "Table~\\ref{tab:master} states which experiment each headline figure comes from.", "",
-        "\\section{Locked Transfer Runs}", a_transfer(), "",
+        "\\section{Experiment 1 Across Layers and Windows}", a_transfer(), "",
         "\\section{Layer Sweeps}", a_layers(), "",
-        "\\section{Five-Seed Experiments}", a_seeds(), "",
+        "\\section{Experiment 1 by Seed}", a_seeds(), "",
         "\\section{Classifier Comparison}", a_classifiers(), "",
         "\\section{Decision Curves}", a_dca(), "",
         "\\section{IPVS Diagnostics}", a_ipvs(), "",

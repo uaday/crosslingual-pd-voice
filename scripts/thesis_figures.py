@@ -63,7 +63,7 @@ def f_protocol() -> None:
     fig, ax = plt.subplots(figsize=(5.6, 3.2))
     x = np.arange(len(sets)); w = 0.38
     ax.bar(x - w/2, conf, w, label="Uncorrected cohort", color=C_CONF)
-    ax.bar(x + w/2, matc, w, label="Controlled protocol (age-matched)", color=C_MATCH)
+    ax.bar(x + w/2, matc, w, label="Age-matched cohort", color=C_MATCH)
     ax.axhline(0.5, color="k", lw=0.8, ls="--")
     ax.text(len(sets) - 0.45, 0.507, "chance", fontsize=7, color="k")
     for xi, (a, m) in enumerate(zip(conf, matc)):
@@ -123,32 +123,35 @@ def f_depth() -> None:
 
 def f_labels_vs_age() -> None:
     """The causal discriminator: the two hypotheses predict opposite directions."""
-    import re
-    d = pd.DataFrame(_j("label_sensitivity.json")["summary"])
-    f = lambda v: float(re.match(r"([\d.]+)", v).group(1))
-    base = d[d.scenario == "baseline"].iloc[0]
-    rows = [("Confident labels only", d[d.scenario == "confident"].iloc[0]),
-            ("Age-matched", d[d.scenario == "agematched"].iloc[0])]
-    tg = ["ipvs", "neurovoz", "mdvr_kcl"]
-    b_w, b_t = f(base["within"]), np.mean([f(base[t]) for t in tg])
+    R = pd.read_csv(LOGS / "unified" / "runs.csv")
+    clin = [("ipvs", "vowel"), ("neurovoz", "vowel"), ("mdvr_kcl", "speech")]
 
-    fig, ax = plt.subplots(figsize=(5.6, 3.0))
+    def within(c):
+        return R[(R.exp == "within") & (R.source == "mpower") & (R.condition == c)].auroc.mean()
+
+    def transfer(c):
+        g = R[(R.exp == "exp1") & (R.condition == c) & (R.target_cohort == "released")]
+        m = np.zeros(len(g), bool)
+        for t, tt in clin:
+            m |= ((g.target == t) & (g.target_task == tt)).to_numpy()
+        return g[m].groupby("seed").auroc.mean().mean()
+    b_w, b_t = within("uncorrected"), transfer("uncorrected")
+    rows = [("Confident labels only", "confident"), ("Age-matched", "agematched"),
+            ("Age- and sex-matched", "agesexmatched")]
+    fig, ax = plt.subplots(figsize=(6.0, 3.0))
     x = np.arange(len(rows)); w = 0.38
-    dw = [f(r["within"]) - b_w for _, r in rows]
-    dt = [np.mean([f(r[t]) for t in tg]) - b_t for _, r in rows]
+    dw = [within(c) - b_w for _, c in rows]
+    dt = [transfer(c) - b_t for _, c in rows]
     ax.bar(x - w/2, dw, w, label="Within mPower", color=C_CONF)
-    ax.bar(x + w/2, dt, w, label="Mean external transfer", color=C_MATCH)
+    ax.bar(x + w/2, dt, w, label="Mean transfer (IPVS, NeuroVoz, MDVR-KCL)", color=C_MATCH)
     ax.axhline(0, color="k", lw=0.9)
-    for xi, (a, m) in enumerate(zip(dw, dt)):
-        ax.text(xi - w/2, a + (.006 if a >= 0 else -.018), f"{a:+.3f}",
-                ha="center", fontsize=7.5)
-        ax.text(xi + w/2, m + (.006 if m >= 0 else -.018), f"{m:+.3f}",
-                ha="center", fontsize=7.5)
-    ax.set_xticks(x); ax.set_xticklabels([n for n, _ in rows])
-    ax.set_ylabel("Change in AUROC from baseline")
+    for xi, (a_, m_) in enumerate(zip(dw, dt)):
+        ax.text(xi - w/2, a_ + (.006 if a_ >= 0 else -.018), f"{a_:+.3f}", ha="center", fontsize=7.5)
+        ax.text(xi + w/2, m_ + (.006 if m_ >= 0 else -.018), f"{m_:+.3f}", ha="center", fontsize=7.5)
+    ax.set_xticks(x); ax.set_xticklabels([n for n, _ in rows], fontsize=8)
+    ax.set_ylabel("Change in AUROC from uncorrected")
     ax.legend(frameon=False, fontsize=7.5)
     _save(fig, "fig_labels_vs_age")
-
 
 def f_windowing() -> None:
     """A null preprocessing change still swings external results by +-0.29."""
@@ -210,31 +213,43 @@ def f_probes() -> None:
 
 
 def f_transfer_b() -> None:
-    """Speech-trained transfer, as a matrix."""
-    d = _j("speech_agematch.json")
-    b = pd.DataFrame(d["runs"]); b = b[b.cohort == "full"]
-    tg = [c for c in b.columns if c.startswith("-> ")]
-    g = b.groupby("source")[["within"] + tg].mean(numeric_only=True)
-    names = {"ipvs": "IPVS", "neurovoz": "NeuroVoz", "mdvr_kcl": "MDVR-KCL"}
-    srcs = ["mdvr_kcl", "neurovoz", "ipvs"]
-    M = np.full((len(srcs), len(tg) + 1), np.nan)
-    for i, s in enumerate(srcs):
-        M[i, 0] = g.loc[s, "within"]
-        for j, t in enumerate(tg):
-            M[i, j + 1] = g.loc[s, t]
-    fig, ax = plt.subplots(figsize=(5.2, 2.9))
-    im = ax.imshow(M, cmap="YlGnBu", vmin=0.5, vmax=1.0, aspect="auto")
-    ax.set_xticks(range(len(tg) + 1))
-    ax.set_xticklabels(["Within"] + [names[t[3:]] for t in tg], fontsize=8)
-    ax.set_yticks(range(len(srcs))); ax.set_yticklabels([names[s] for s in srcs], fontsize=8)
-    ax.set_xlabel("Tested on"); ax.set_ylabel("Trained on")
-    for i in range(M.shape[0]):
-        for j in range(M.shape[1]):
-            if not np.isnan(M[i, j]):
-                ax.text(j, i, f"{M[i,j]:.3f}", ha="center", va="center", fontsize=8,
-                        color="white" if M[i, j] > 0.82 else "black")
-    ax.grid(False)
-    fig.colorbar(im, ax=ax, shrink=0.85, label="AUROC")
+    """Experiment 2 as two 4 x 4 matrices: uncorrected, and age-matched training and test."""
+    R = pd.read_csv(LOGS / "unified" / "runs.csv")
+    names = {"bridge2ai": "Bridge2AI", "neurovoz": "NeuroVoz", "ipvs": "IPVS",
+             "mdvr_kcl": "MDVR-KCL"}
+    order = ["bridge2ai", "neurovoz", "ipvs", "mdvr_kcl"]
+    W = R[(R.exp == "within") & (R.source_task == "speech")]
+    E = R[R.exp == "exp2"]
+    panels = [("Uncorrected", "uncorrected", "released"), ("Age-matched", "agematched", "agematched")]
+    fig, axes = plt.subplots(1, 2, figsize=(7.4, 3.2))
+    fig.set_layout_engine("constrained")
+    for ax, (title, cond, coh) in zip(axes, panels):
+        M = np.full((4, 4), np.nan)
+        for i, src in enumerate(order):
+            for j, tgt in enumerate(order):
+                if src == tgt:
+                    v = W[(W.source == src) & (W.condition == cond)].auroc
+                else:
+                    g = E[(E.source == src) & (E.target == tgt) & (E.condition == cond)]
+                    gc = g[g.target_cohort == coh]
+                    v = (gc if not gc.empty else g[g.target_cohort == "released"]).auroc
+                if len(v):
+                    M[i, j] = v.mean()
+        im = ax.imshow(M, cmap="YlGnBu", vmin=0.2, vmax=1.0, aspect="auto")
+        ax.set_xticks(range(4)); ax.set_xticklabels([names[o] for o in order], fontsize=7, rotation=20)
+        ax.set_yticks(range(4)); ax.set_yticklabels([names[o] for o in order], fontsize=7)
+        ax.set_title(title, fontsize=9); ax.set_xlabel("Tested on", fontsize=8)
+        for i in range(4):
+            for j in range(4):
+                if not np.isnan(M[i, j]):
+                    ax.text(j, i, f"{M[i,j]:.2f}", ha="center", va="center", fontsize=7.5,
+                            color="white" if M[i, j] > 0.8 else "black",
+                            fontweight="bold" if i == j else "normal")
+                else:
+                    ax.text(j, i, "--", ha="center", va="center", fontsize=7.5)
+        ax.grid(False)
+    axes[0].set_ylabel("Trained on", fontsize=8)
+    fig.colorbar(im, ax=axes, shrink=0.8, label="AUROC")
     _save(fig, "fig_transfer_matrix")
 
 
@@ -337,13 +352,13 @@ def f_experiment_map() -> None:
     sub = ["English, vowel\nself-report", "English, vowel/DDK/speech\nclinician",
            "Spanish\nclinician", "Italian\nclinician", "English\nclinician"]
     cells = {  # (row = trained on, col = tested on) -> (code, colour)
-        (0, 0): ("W", "#DDDDDD"), (0, 1): ("D", "#B07AA1"), (0, 2): ("A", "#4E79A7"),
-        (0, 3): ("A", "#4E79A7"), (0, 4): ("A", "#4E79A7"),
-        (1, 0): ("C", "#59A14F"), (1, 1): ("W+S", "#DDDDDD"), (1, 2): ("C", "#59A14F"),
-        (1, 3): ("C", "#59A14F"), (1, 4): ("C", "#59A14F"),
-        (2, 2): ("W", "#DDDDDD"), (2, 3): ("B", "#F28E2B"), (2, 4): ("B", "#F28E2B"),
-        (3, 2): ("B", "#F28E2B"), (3, 3): ("W", "#DDDDDD"), (3, 4): ("B", "#F28E2B"),
-        (4, 2): ("B", "#F28E2B"), (4, 3): ("B", "#F28E2B"), (4, 4): ("W", "#DDDDDD"),
+        (0, 0): ("W", "#DDDDDD"), (0, 1): ("1", "#4E79A7"), (0, 2): ("1", "#4E79A7"),
+        (0, 3): ("1", "#4E79A7"), (0, 4): ("1", "#4E79A7"),
+        (1, 1): ("W+S", "#DDDDDD"), (1, 2): ("2", "#F28E2B"),
+        (1, 3): ("2", "#F28E2B"), (1, 4): ("2", "#F28E2B"),
+        (2, 1): ("2", "#F28E2B"), (2, 2): ("W", "#DDDDDD"), (2, 3): ("2", "#F28E2B"), (2, 4): ("2", "#F28E2B"),
+        (3, 1): ("2", "#F28E2B"), (3, 2): ("2", "#F28E2B"), (3, 3): ("W", "#DDDDDD"), (3, 4): ("2", "#F28E2B"),
+        (4, 1): ("2", "#F28E2B"), (4, 2): ("2", "#F28E2B"), (4, 3): ("2", "#F28E2B"), (4, 4): ("W", "#DDDDDD"),
     }
     fig = plt.figure(figsize=(7.4, 6.6))
     fig.set_layout_engine(None)
@@ -391,10 +406,8 @@ def f_experiment_map() -> None:
     # --- legend
     leg = fig.add_axes([0.02, 0.0, 0.96, 0.18]); leg.axis("off")
     leg.set_xlim(0, 100); leg.set_ylim(0, 18)
-    items = [("A", "#4E79A7", "Design A: the proposed model, trained on mPower vowels, applied to each clinical dataset"),
-             ("B", "#F28E2B", "Design B: a head trained on one clinical dataset's speech, applied to the other two"),
-             ("C", "#59A14F", "Bridge2AI as source: vowel, DDK and speech heads applied to the other datasets"),
-             ("D", "#B07AA1", "Bridge2AI as target: the mPower vowel model applied to Bridge2AI"),
+    items = [("1", "#4E79A7", "Experiment 1: trained on mPower sustained vowels, applied to every task of each other dataset"),
+             ("2", "#F28E2B", "Experiment 2: trained on one dataset's connected speech, applied to each other dataset's speech"),
              ("W", "#DDDDDD", "Within one dataset: participant-disjoint cross-validation; S = PD against other disorders")]
     for i, (code, col, txt) in enumerate(items):
         y = 16 - i * 3.0
@@ -402,9 +415,8 @@ def f_experiment_map() -> None:
         leg.text(2.6, y, code, ha="center", va="center", fontsize=7, fontweight="bold",
                  color="black" if col == "#DDDDDD" else "white")
         leg.text(5.5, y, txt, va="center", fontsize=7.5)
-    leg.text(1, 0.6, "Every cell is run on the uncorrected data and again with age controlled "
-             "where age is recorded. Design A: one run per configuration, five seeds for the age "
-             "analysis; B, C, D, S: five seeds.", fontsize=7.5, style="italic")
+    leg.text(1, 0.6, "Every cell: layer 11, locked head, five seeds; run uncorrected, age-matched and "
+             "age- and sex-matched where the data allow.", fontsize=7.5, style="italic")
     _save(fig, "fig4_0_experiment_map")
 
 
@@ -465,10 +477,58 @@ def f_investigation_chain() -> None:
     _save(fig, "fig4_0b_investigation_chain")
 
 
+def f_confound_diagram() -> None:
+    """How mPower recruitment ties age to the diagnosis, so a model can score by detecting age."""
+    from matplotlib.patches import FancyArrowPatch, FancyBboxPatch
+
+    fig = plt.figure(figsize=(7.2, 3.3))
+    fig.set_layout_engine(None)
+    ax = fig.add_axes([0, 0, 1, 1]); ax.axis("off")
+    ax.set_xlim(0, 100); ax.set_ylim(0, 46)
+    red = "#C0392B"
+
+    def box(x, y, w, h, txt, fc="#F2F2F2", bold=False):
+        ax.add_patch(FancyBboxPatch((x, y), w, h, boxstyle="round,pad=0.5", fc=fc,
+                                    ec="#555555", lw=0.8))
+        ax.text(x + w / 2, y + h / 2, txt, ha="center", va="center", fontsize=8.5,
+                fontweight="bold" if bold else "normal")
+
+    def arrow(p, q, col="#333333", style="-|>", ls="-", lw=1.1):
+        ax.add_patch(FancyArrowPatch(p, q, arrowstyle=style, mutation_scale=11, color=col,
+                                     lw=lw, linestyle=ls))
+
+    box(1, 17, 16, 12, "mPower\nrecruitment", bold=True)
+    box(30, 31, 15, 9, "Age", fc="#FCE8D5", bold=True)
+    box(30, 6, 15, 9, "Diagnosis", fc="#FCE8D5", bold=True)
+    box(60, 18, 14, 10, "Voice\nrecording")
+    box(84, 18, 15, 10, "Classifier\n(predicts PD)")
+
+    arrow((17.6, 26), (29.4, 34))
+    arrow((17.6, 20), (29.4, 11))
+    ax.text(20, 36.5, "young volunteers\njoin the app", fontsize=7, ha="center")
+    ax.text(20, 6.0, "older patients\nenrol deliberately", fontsize=7, ha="center")
+
+    arrow((37.5, 30.4), (37.5, 15.6), col=red, style="<|-|>", lw=1.4)
+    ax.text(39.3, 23, "27.5-year gap:\nPD 60.0,\ncontrols 32.6", fontsize=7.2, color=red,
+            ha="left", va="center")
+
+    arrow((45.6, 35), (59.4, 25.5), lw=1.6)
+    ax.text(53.5, 36.5, "strong: age changes\nevery voice", fontsize=7, ha="center")
+    arrow((45.6, 11), (59.4, 20.5), ls="--")
+    ax.text(53.5, 6.0, "weak: the disease\nsignal we want", fontsize=7, ha="center")
+
+    arrow((74.6, 23), (83.4, 23), lw=1.4)
+
+    ax.text(50, 0.5, "Through the gap, a model can predict the diagnosis by reading age from the "
+            "voice: age alone scores 0.922, the voice model 0.796.", ha="center", fontsize=7.5,
+            style="italic")
+    _save(fig, "fig4_0c_confound_diagram")
+
+
 def main() -> None:
     warnings.simplefilter("ignore")
     f_protocol(); f_depth(); f_labels_vs_age(); f_windowing()
-    f_probes(); f_transfer_b(); f_agegap(); f_experiment_map(); f_investigation_chain()
+    f_probes(); f_transfer_b(); f_agegap(); f_experiment_map(); f_confound_diagram()
     # f_two_designs() is no longer called: fig4_3_two_designs.pdf is now the author's
     # hand-made version, and regenerating it here would overwrite that.
     n = len(list(OUT.glob("*.pdf")))

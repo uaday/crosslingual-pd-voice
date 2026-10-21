@@ -11,7 +11,7 @@ the AUROC difference (1,000 participant resamples, same participants on both sid
                (classifier_predictions.csv)
 
 It then applies the Holm correction within each family of the significance tests in
-Table 4.6 (fusion__xls-r-300m__L15.json): DeLong, paired bootstrap and McNemar, separately
+Table 4.6 (fusion__xls-r-300m__L11.json): DeLong, paired bootstrap and McNemar, separately
 for the uncorrected and the age-matched cohort.
 
 Run:  .venv\\Scripts\\python.exe -u scripts\\difference_cis.py
@@ -103,7 +103,7 @@ def main() -> None:
     print("classifiers widest CI bound", widest, flush=True)
 
     # ---- Holm within each test family of Table 4.6
-    f = json.loads((LOGS / "fusion__xls-r-300m__L15.json").read_text())
+    f = json.loads((LOGS / "fusion__xls-r-300m__L11.json").read_text())
     for scen, block in f["scenarios"].items():
         tests = block["_tests"]
         names = list(tests)

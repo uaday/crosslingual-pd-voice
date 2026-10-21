@@ -111,3 +111,4 @@ build/
 dist/
 .pytest_cache/
 .ruff_cache/
+thesis/Main.pdf
