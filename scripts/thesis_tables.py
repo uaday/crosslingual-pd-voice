@@ -129,11 +129,11 @@ def t_baselines() -> None:
                      b(conf) if key.startswith("age") else f"{conf:.3f}",
                      b(am) if key.startswith("SSL") else f"{am:.3f}"])
     _w("t3_4_baselines.tex",
-       _tab(["Feature set", "Confounded cohort", "Age-matched cohort"], rows, "lrr"),
+       _tab(["Feature set", "Uncorrected cohort", "Age-matched cohort"], rows, "lrr"),
        "Subject-level AUROC on mPower by feature set, best of five classifiers, under the "
        "two evaluation protocols.",
        "tab:baselines",
-       "On the confounded cohort a single demographic variable outperforms a "
+       "On the uncorrected cohort a single demographic variable outperforms a "
        "315-million-parameter speech encoder. After age matching the demographic baseline "
        "falls to chance and the voice model does not. The baseline to beat is therefore "
        "0.531, not 0.500.")
@@ -164,7 +164,7 @@ def t_encoders_confounded() -> None:
         rows.append([label, a, f"[{lo:.3f}, {hi:.3f}]", cfgs])
     _w("t4_1_encoders_confounded.tex",
        _tab(["Encoder", "AUROC", "95\\% CI", "Configurations tried"], rows, "lrrr"),
-       "Encoder comparison on the confounded cohort, as originally conducted.",
+       "Encoder comparison on the uncorrected cohort, as originally conducted.",
        "tab:encoders-confounded",
        "The interval of XLS-R overlaps none of the others, so its lead is a real result under "
        "the protocol used. "
@@ -210,7 +210,7 @@ def t_protocol() -> None:
         ["\\midrule Within-to-transfer gap", "\\textbf{32.1 pp}", "\\textbf{1.2 pp}"],
     ]
     _w("t4_3_protocol.tex",
-       _tab(["", "Field protocol (confounded)", "Controlled protocol (age-matched)"],
+       _tab(["", "Uncorrected cohort", "Age-matched cohort"],
             rows, "lrr"),
        "The same model, the same audio and the same splits, evaluated under two protocols.",
        "tab:protocol",
@@ -427,7 +427,7 @@ def t_probes() -> None:
        "tab:probes",
        "The diagnosis is the weakest of the attributes recovered, below elicitation task, "
        "speaker sex, dataset identity, language and age band, and the value shown is "
-       "measured on the confounded cohort. Recording device is recovered at little above "
+       "measured on the uncorrected cohort. Recording device is recovered at little above "
        "chance, which indicates the probes are not simply detecting everything.")
 
 
@@ -577,9 +577,9 @@ def t_master() -> None:
 
     S = "\\textsuperscript{a}"
     rows = [
-        ["\\multicolumn{6}{l}{\\emph{Design A, five-seed run: field protocol (897 PD / 3{,}912 HC) "
+        ["\\multicolumn{6}{l}{\\emph{Design A, five-seed run: uncorrected cohort (897 PD / 3{,}912 HC) "
          "and age-matched (562 / 562)}} \\\\[-0.2em]%", "", "", "", "", ""],
-        ["Within mPower, field protocol", pm(ls["baseline"]["within"]), "15", "MLP head", "5",
+        ["Within mPower, uncorrected", pm(ls["baseline"]["within"]), "15", "MLP head", "5",
          "\\S\\ref{subsec:diagnosis}"],
         ["mPower $\\rightarrow$ IPVS / NeuroVoz / MDVR-KCL, field", ext("baseline"), "15",
          "MLP head", "5", "\\S\\ref{subsec:diagnosis}"],
@@ -626,13 +626,13 @@ def t_master() -> None:
          f"{sweep['xls-r-300m']['best_layer']})", f"{min(span):.3f}--{max(span):.3f}", "all",
          "linear probe", "1", "Table~\\ref{tab:encoders-matched}"],
         ["\\midrule \\multicolumn{6}{l}{\\emph{Design A: locked transfer at layer 11, on the "
-         "cross-validated plateau (field protocol)}} \\\\[-0.2em]%", "", "", "", "", ""],
+         "cross-validated plateau (uncorrected cohort)}} \\\\[-0.2em]%", "", "", "", "", ""],
         ["Within mPower", f"{l11:.3f}", "11", "MLP head", "1", "\\S\\ref{sec:encoder}"],
         ["mPower $\\rightarrow$ six external dataset/task pairs", f"{min(ta):.3f}--{max(ta):.3f}",
          "11", "MLP head", "1", "Table~\\ref{tab:transfer-a}"],
         ["\\midrule \\multicolumn{6}{l}{\\emph{Design B: a new head trained on connected speech "
          "of one clinical dataset}} \\\\[-0.2em]%", "", "", "", "", ""],
-        ["Transfer between clinical datasets, unmatched", span_of("full"), "15", "MLP head", "5",
+        ["Transfer between clinical datasets, uncorrected", span_of("full"), "15", "MLP head", "5",
          "Table~\\ref{tab:transfer-b}"],
         ["Transfer between clinical datasets, age-matched", span_of("age-matched"), "15",
          "MLP head", "5", "Table~\\ref{tab:agecontrol}"],
@@ -672,7 +672,7 @@ def t_master() -> None:
        "elsewhere refer to this table.",
        "tab:master",
        "Appendix~\\ref{app:tables} gives the per-seed and per-run values. "
-       "Field protocol: the uncorrected mPower cohort, capped at three recordings per "
+       "Uncorrected: the mPower cohort as released, capped at three recordings per "
        "participant (897 with a diagnosis, 3{,}912 without; prevalence 0.187). Age-matched: "
        "frequency-matched in 5-year bins (562 per group). Within-dataset and transfer figures "
        "of the five-seed run are both at layer 15. Bridge2AI uses layer 8, chosen by "
@@ -767,7 +767,7 @@ def t_b2ai_transfer() -> None:
         rows.append([src, label, "--", cell["uncorrected"], cell["age-matched"]])
     _w("t4_21_b2ai_transfer.tex",
        "{\\small\\setlength{\\tabcolsep}{4pt}\n"
-       + _tab(["Design: trained on", "Tested on", "PD / HC", "Source as published",
+       + _tab(["Design: trained on", "Tested on", "PD / HC", "Source uncorrected",
                "Source age-matched"], rows, "lLccc") + "\n}",
        "Designs C and D: locked transfer with Bridge2AI as source and as target, scored on "
        "age-comparable test sets.",

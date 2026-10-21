@@ -62,7 +62,7 @@ def f_protocol() -> None:
 
     fig, ax = plt.subplots(figsize=(5.6, 3.2))
     x = np.arange(len(sets)); w = 0.38
-    ax.bar(x - w/2, conf, w, label="Field protocol (confounded)", color=C_CONF)
+    ax.bar(x - w/2, conf, w, label="Uncorrected cohort", color=C_CONF)
     ax.bar(x + w/2, matc, w, label="Controlled protocol (age-matched)", color=C_MATCH)
     ax.axhline(0.5, color="k", lw=0.8, ls="--")
     ax.text(len(sets) - 0.45, 0.507, "chance", fontsize=7, color="k")
@@ -98,7 +98,7 @@ def f_depth() -> None:
     if conf:
         cx, cy = zip(*conf)
         ax.plot(cx, cy, "s--", ms=3, color=C_CONF, alpha=0.9,
-                label="Confounded cohort")
+                label="Uncorrected cohort")
     ax.axhline(0.5, color="k", lw=0.8, ls="--")
     ax.text(0.2, 0.505, "chance", fontsize=7)
 
@@ -313,7 +313,7 @@ def f_two_designs() -> None:
         b = ["one clinical dataset\nconnected speech\nclinician labels",
              "a fresh head on the\nsame frozen encoder",
              "the other clinical datasets\nconnected speech",
-             f"unmatched {fl:.3f} to {fh:.3f}\nage-matched {ml:.3f} to {mh:.3f}"]
+             f"uncorrected {fl:.3f} to {fh:.3f}\nage-matched {ml:.3f} to {mh:.3f}"]
         kinds_a = ["data", "train", "target", "bad"]
         kinds_b = ["data", "train", "target", "mixed"]
         for x, texts, kinds in ((0.3, a, kinds_a), (5.7, b, kinds_b)):
@@ -402,16 +402,73 @@ def f_experiment_map() -> None:
         leg.text(2.6, y, code, ha="center", va="center", fontsize=7, fontweight="bold",
                  color="black" if col == "#DDDDDD" else "white")
         leg.text(5.5, y, txt, va="center", fontsize=7.5)
-    leg.text(1, 0.6, "Every cell is run on the data as published and again with age controlled "
+    leg.text(1, 0.6, "Every cell is run on the uncorrected data and again with age controlled "
              "where age is recorded. Design A: one run per configuration, five seeds for the age "
              "analysis; B, C, D, S: five seeds.", fontsize=7.5, style="italic")
     _save(fig, "fig4_0_experiment_map")
 
 
+def f_investigation_chain() -> None:
+    """The order of the experiments: each answer raises the question the next one asks."""
+    from matplotlib.patches import FancyArrowPatch, FancyBboxPatch
+
+    steps = [  # (design label, colour, question, experiment, answer, section)
+        ("A", "#4E79A7", "Does the proposed system\ntransfer to new datasets?",
+         "Train on mPower vowels, lock,\ntest on three clinical datasets",
+         "No: 0.777 at home, 0.40-0.62\nabroad; 14 of 30 runs inverted", "4.4.1"),
+        ("A", "#4E79A7", "Why does it fail: noisy\nlabels or the age gap?",
+         "Same model on confident labels\nand on an age-matched cohort",
+         "Age: matching closes the gap\nfrom 29.6 to 0.9 points", "4.4.2"),
+        ("A", "#4E79A7", "Does a better model\nfix it?",
+         "5 encoders, 5 classifiers, feature\nsets, adaptation, windowing",
+         "No: all within about 0.06\nonce age is controlled", "4.4.3"),
+        ("B", "#F28E2B", "Does the recording\ntask matter?",
+         "Train on connected speech of one\nclinical dataset, test on the others",
+         "Speech transfers, but on small\ndatasets it cannot beat the vowel", "4.4.4-5"),
+        ("C/D", "#59A14F", "With the same speakers,\ndoes speech beat the vowel?",
+         "Bridge2AI: all tasks from the\nsame people, age-matched",
+         "Yes: 0.959 against 0.696, and\nspeech transfers at 0.75-0.93", "4.4.6-7"),
+        ("S", "#8C8C8C", "Is the speech signal specific\nto Parkinson's disease?",
+         "Bridge2AI participants with\nother disorders",
+         "No: cognitive impairment\nscores almost as high", "4.4.8"),
+    ]
+    fig = plt.figure(figsize=(7.4, 6.2))
+    fig.set_layout_engine(None)
+    ax = fig.add_axes([0, 0, 1, 1]); ax.axis("off")
+    ax.set_xlim(0, 100); ax.set_ylim(-3, 100)
+    cols = [(9, 27, "Question"), (37, 30, "Experiment"), (68, 30, "Answer")]
+    for x, w, h in cols:
+        ax.text(x + w / 2, 97, h, ha="center", va="center", fontsize=10, fontweight="bold")
+    h, gap, y0 = 12.6, 3.0, 93
+    for i, (d, col, q, e, a, sec) in enumerate(steps):
+        y = y0 - (i + 1) * h - i * gap
+        ax.add_patch(FancyBboxPatch((1, y + 1), 6, h - 2, boxstyle="round,pad=0.3",
+                                    fc=col, ec="none"))
+        ax.text(4, y + h / 2 + 1.6, f"{i + 1}", ha="center", va="center", fontsize=11,
+                fontweight="bold", color="white")
+        ax.text(4, y + h / 2 - 2.2, d, ha="center", va="center", fontsize=7.5, color="white")
+        for (x, w, _), txt, fc in zip(cols, (q, e, a), ("#F2F2F2", "#F2F2F2", "#FCE8D5")):
+            ax.add_patch(FancyBboxPatch((x, y + 0.8), w, h - 1.6, boxstyle="round,pad=0.4",
+                                        fc=fc, ec="#555555", lw=0.7))
+            ax.text(x + w / 2, y + h / 2, txt, ha="center", va="center", fontsize=8)
+        for x0, x1 in ((36, 37), (67, 68)):
+            ax.add_patch(FancyArrowPatch((x0 - 0.4, y + h / 2), (x1 + 0.2, y + h / 2),
+                                         arrowstyle="-|>", mutation_scale=9, color="#333333"))
+        ax.text(97, y + h - 2.2, f"Sec. {sec}", ha="right", va="top", fontsize=6.5,
+                color="#555555")
+        if i < len(steps) - 1:
+            ax.add_patch(FancyArrowPatch((83, y + 0.4), (22.5, y - gap - 0.4),
+                                         connectionstyle="arc3,rad=0.0", arrowstyle="-|>",
+                                         mutation_scale=9, color="#AAAAAA", lw=0.8))
+    ax.text(50, -1.5, "Each answer raises the question of the next row. Colours and letters "
+            "match the experiment map.", ha="center", fontsize=7.5, style="italic")
+    _save(fig, "fig4_0b_investigation_chain")
+
+
 def main() -> None:
     warnings.simplefilter("ignore")
     f_protocol(); f_depth(); f_labels_vs_age(); f_windowing()
-    f_probes(); f_transfer_b(); f_agegap(); f_experiment_map()
+    f_probes(); f_transfer_b(); f_agegap(); f_experiment_map(); f_investigation_chain()
     # f_two_designs() is no longer called: fig4_3_two_designs.pdf is now the author's
     # hand-made version, and regenerating it here would overwrite that.
     n = len(list(OUT.glob("*.pdf")))
