@@ -302,7 +302,10 @@ def appendix_b():
              "from the project's source package \\texttt{pdvoice}, in the order a recording "
              "passes through them. Imports and module-level constants are omitted. The "
              "complete code, including the analysis scripts named in the text, is in the "
-             "project repository (Appendix~\\ref{app:reproduce}).", ""]
+             "project repository, "
+             "\\texttt{github.com/uaday/pd-research}, which is private and available on "
+             "request; its file \\texttt{REPRODUCE.md} gives the software versions, the "
+             "encoder revisions and the steps to re-run every experiment.", ""]
     for title, desc, rel, names in SAMPLES:
         if title:
             parts += [f"\\section{{{title}}}", desc, ""]
