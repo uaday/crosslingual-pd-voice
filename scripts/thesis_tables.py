@@ -476,10 +476,8 @@ def t_probes() -> None:
        _tab(["Attribute", "Measure", "Value", "Chance"], rows, "llrr"),
        "Linear probes applied to the frozen embeddings, subject-disjoint.",
        "tab:probes",
-       "The diagnosis is among the weakest of the attributes recovered: below elicitation "
-       "task, speaker sex, dataset identity and language, level with the age band, and the "
-       "value shown is "
-       "measured on the uncorrected cohort. Chance: 0.5 for AUROC; for accuracy, the share "
+       "The diagnosis is measured on the uncorrected cohort. Chance: 0.5 for AUROC; for "
+       "accuracy, the share "
        "of the most common class. Language and dataset identity share one label here, "
        "because each pooled dataset has one language. Recording device is not recovered "
        "(below the majority rate), so the probes do not detect everything.")
