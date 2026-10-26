@@ -347,7 +347,7 @@ def t_master(R):
           "tab:master",
           "Mean over five seeds; participant-level AUROC. Mean transfer: the average over IPVS "
           "vowels, NeuroVoz vowels and MDVR-KCL speech, the three clinical test sets. "
-          "Appendix~\\ref{app:tables} gives every seed. $^{a}$MDVR-KCL records no age, so it is "
+          "Table~\\ref{tab:appA-seeds} gives every seed. $^{a}$MDVR-KCL records no age, so it is "
           "trained on as released.")
 
 
