@@ -35,8 +35,8 @@ def _j(name):
     return json.loads((LOGS / name).read_text())
 
 
-def longtable(cols, header, rows, caption, label, note=""):
-    out = ["{\\footnotesize\\setlength{\\tabcolsep}{3pt}", f"\\begin{{longtable}}{{{cols}}}",
+def longtable(cols, header, rows, caption, label, note="", size="footnotesize"):
+    out = [f"{{\\{size}\\setlength{{\\tabcolsep}}{{{'2.5pt' if size == 'scriptsize' else '3pt'}}}", f"\\begin{{longtable}}{{{cols}}}",
            f"\\caption{{{caption}}}\\label{{{label}}} \\\\", "\\toprule",
            " & ".join(f"\\textbf{{{h}}}" for h in header) + " \\\\", "\\midrule",
            "\\endfirsthead",
@@ -63,24 +63,24 @@ def a_transfer():
         d = json.loads(f.read_text())
         lo, hi = d["auroc_ci"]
         layer = "24" if layer == "None" else layer
-        cfg = f"L{layer}, {'whole file' if wfull else 'fixed window'}"
+        cfg = f"L{layer}, {'whole' if wfull else 'fixed'}"
         if adapt:
             cfg += ", " + {"__adapt-hc-centroid": "HC centroid",
                            "__adapt-hc-standardize": "HC standardise",
-                           "__agematched-target": "age-matched test set"}[adapt]
+                           "__agematched-target": "matched test"}[adapt]
         a, c = f"{d['auroc']:.3f}", f"[{lo:.3f}, {hi:.3f}]"
         if hi < 0.5:
             a, c = f"\\textbf{{{a}}}", f"\\textbf{{{c}}}"
         s90 = d["sensitivity_at_90_spec"]
         s90 = s90["sensitivity"] if isinstance(s90, dict) else s90
-        rows.append([f"{NAMES[ds]} / {TASKS[task]}", cfg, f"{d['n_pd']}/{d['n_hc']}", a, c,
+        rows.append([f"{NAMES[ds]} {TASKS[task]}", cfg, f"{d['n_pd']}/{d['n_hc']}", a, c,
                      f"{d['auprc']:.3f}", f"{d['ece']:.3f}", f"{d['brier']:.3f}",
                      f"{s90:.3f}"])
-    runs = [r for r in rows if "age-matched test set" not in r[1]]
+    runs = [r for r in rows if "matched test" not in r[1]]
     n_inv = sum(r[3].startswith("\\textbf") for r in runs)
     return longtable(
-        "P{2.1cm}P{2.75cm}rrcrrrr",
-        ["Dataset / task", "Configuration", "PD/HC", "AUROC", "95\\% CI", "AUPRC", "ECE", "Brier",
+        "llrrcrrrr",
+        ["Test set", "Configuration", "PD/HC", "AUROC", "95\\% CI", "AUPRC", "ECE", "Brier",
          "Sens."],
         rows,
         f"All {len(runs)} single-run configurations of Experiment 1 across layers, windows and adaptation. The model is trained on mPower "
@@ -88,11 +88,13 @@ def a_transfer():
         "unchanged to each external dataset.",
         "tab:appA-transfer",
         f"Bold: the whole confidence interval lies below 0.5 ({n_inv} of {len(runs)} runs). "
-        "Sens.: sensitivity at a specificity of at least 0.90. L24 is the final layer. HC "
+        "Configuration: encoder layer (L24 is the final layer), then the fixed analysis "
+        "window or the whole file. Sens.: sensitivity at a specificity of at least 0.90. HC "
         "centroid and HC standardise are the healthy-control adaptations of "
-        "Section~\\ref{subsec:variants}. Rows marked age-matched test set rescore the same "
-        "locked Bridge2AI predictions on patients and controls matched on age; they are "
-        "not counted as separate runs. Bridge2AI was embedded with the fixed window only.")
+        "Section~\\ref{subsec:variants}. Rows marked matched test rescore the same "
+        "locked Bridge2AI predictions on 30 or 31 US patients and as many controls matched on age; they are "
+        "not counted as separate runs. Bridge2AI was embedded with the fixed window only.",
+        size="scriptsize")
 
 
 def a_layers():
@@ -109,7 +111,7 @@ def a_layers():
         rows.append([str(L)] + cells)
     best = {m: int(piv[m].idxmax()) for m in order if m in piv.columns}
     note = ("Age-matched mPower cohort, one seed. The first column uses the framework's MLP "
-            "head, as in Section~\\ref{sec:encoder}; the other five use a linear probe so that "
+            "head, as in Section~\\ref{subsec:layer}; the other five use a linear probe so that "
             "every encoder is read the same way. Best layer per column: XLS-R (MLP) "
             f"{int(sel['auroc'].idxmax())}; " + "; ".join(f"{m} {b}" for m, b in best.items())
             + ". Layer 0 is the convolutional feature encoder's output.")
@@ -151,7 +153,7 @@ def a_seeds():
 
 def a_classifiers():
     c = pd.read_csv(LOGS / "classifier_comparison.csv")
-    rows = [[r.cohort, r.features, r.classifier, f"{r.AUROC:.3f}", f"[{r.lo:.3f}, {r.hi:.3f}]"]
+    rows = [[r.cohort, r.features, r.classifier.replace("~", "$\\sim$"), f"{r.AUROC:.3f}", f"[{r.lo:.3f}, {r.hi:.3f}]"]
             for r in c.itertuples()]
     return longtable("llp{3.6cm}rr", ["Cohort", "Features", "Classifier", "AUROC", "95\\% CI"],
                      rows, "All classifier and feature combinations, one recording per "
@@ -192,6 +194,8 @@ def a_ipvs():
                     "$\\rho$ (HC)"], rows,
                    "Diagnosis of the IPVS inversions (Section~\\ref{subsec:designA}).",
                    "tab:appA-ipvs-inv",
+                   "The locked Experiment 1 models of Table~\\ref{tab:u-exp1}: layer 11, mean over "
+                   "five seeds. "
                    "PD vs EHC: patients against elderly controls only. No 44.1k: without the "
                    "participants recorded at 44.1~kHz. $\\rho$ (HC): Spearman correlation of the "
                    "model's score with age among controls.")
@@ -208,7 +212,8 @@ def a_ipvs():
             r = ce[task]["features"][k]
             cells.append(f"{r['auroc']:.3f}")
         r = ce["all"]["features"][k]
-        cells += [f"{r.get('pd_mean', float('nan')):.4g}", f"{r.get('hc_mean', float('nan')):.4g}"]
+        cells += [f"{r.get('pd_mean', float('nan')) + 0.0:.4g}".replace('-0', '0') if abs(r.get('pd_mean', 0)) < 5e-5 else f"{r.get('pd_mean', float('nan')):.4g}",
+                  f"{r.get('hc_mean', float('nan')):.4g}"]
         rows.append(cells)
     t2 = longtable("p{5.0cm}rrrrr", ["Recording property", "All", "Vowel", "Speech",
                                      "PD mean", "EHC mean"], rows,
@@ -230,6 +235,15 @@ def appendix_a():
         "\\section{Layer Sweeps}", a_layers(), "",
         "\\section{Experiment 1 by Seed}", a_seeds(), "",
         "\\section{Classifier Comparison}", a_classifiers(), "",
+        "\\section{Feature Sets, Classical Transfer and the Analysis Window}",
+        "These three tables give the detail behind the robustness summary of "
+        "Section~\\ref{subsec:variants} (Table~\\ref{tab:robustness}).", "",
+        "\\input{tables/t4_4_significance.tex}",
+        "\\input{tables/t4_11_classical_transfer.tex}",
+        "\\input{tables/t4_10_windowing.tex}",
+        # the later tables are longtables, which print in place; flush these floats first
+        # so the appendix tables appear in numbered order
+        "\\clearpage", "",
         "\\section{Decision Curves}", a_dca(), "",
         "\\section{IPVS Diagnostics}", a_ipvs(), "",
     ]
@@ -267,39 +281,38 @@ def source_of(rel: str, names: list[str]) -> str:
     return to_ascii("\n\n".join(out))
 
 
+# Only the functions that carry the thesis's methodological guarantees are reproduced:
+# demographic matching, participant-disjoint splits, the head and the locked calibration.
+# Everything else is in the repository named below.
 SAMPLES = [
-    ("Pre-processing", "Silence trimming and voice-activity detection applied to every "
-     "recording (Section~\\ref{sec:preproc}).",
-     "preprocess.py", ["voice_activity_trim", "preprocess_clip", "quality_control"]),
-    ("Embedding extraction", "Frozen encoder, chosen layer, mean and standard deviation pooling "
-     "(Equation~\\ref{eq:pooling}).",
-     "features/ssl.py", ["pool", "_embed_wave"]),
     ("Cohort construction", "Recording cap and frequency matching on age, or on age and sex "
      "(Equation~\\ref{eq:agematch}).",
      "cohort.py", ["cap_per_subject", "demographic_match_ids"]),
-    ("Bridge2AI participant groups", "How Bridge2AI participants are assigned to Parkinson's "
-     "disease, healthy control or another disorder (Section~\\ref{subsec:bridge2ai}).",
-     "data/bridge2ai.py", ["bridge2ai_participants"]),
     ("Participant-disjoint splits", "Folds that never place one participant in two partitions.",
      "data/splits.py", ["assign_folds"]),
     ("Classifier head", "The 256-unit head of Equation~\\ref{eq:head} and its training loop.",
      "models/head.py", ["build_head", "fit_mlp_head"]),
-    ("Calibration", "The three calibration maps, selection by validation Brier score, and the "
+    ("Calibration", "Selection of the calibration map by validation Brier score, and the "
      "strictly increasing ranking map used for AUROC, AUPRC and sensitivity "
      "(Section~\\ref{sec:calibration}).",
-     "calibration.py", ["TemperatureScaler", "PlattScaler", "IsotonicCalibrator",
-                        "RankingMap", "select_best_by_brier"]),
-    ("Significance tests", "DeLong's and McNemar's tests (Section~\\ref{subsec:significance}). "
-     "The other measures follow the formulas of Section~\\ref{sec:measures} directly.",
-     "eval/discrimination.py", ["delong_roc_test", "mcnemar_test"]),
+     "calibration.py", ["RankingMap", "select_best_by_brier"]),
 ]
+
+
+def short_docstrings(code: str) -> str:
+    """Keep only the first line of each docstring; the full text is in the repository."""
+    import re
+    return re.sub(r'("""[^\n]*?)\n(?:.*?\n)*?\s*"""',
+                  lambda m: m.group(1).rstrip() + '"""' if not m.group(1).endswith('"""') else m.group(0),
+                  code, flags=re.S)
 
 
 def appendix_b():
     parts = ["\\chapter{Code Samples}", "\\label{app:code}", "",
-             "This appendix reproduces the central functions of the pipeline, taken directly "
-             "from the project's source package \\texttt{pdvoice}, in the order a recording "
-             "passes through them. Imports and module-level constants are omitted. The "
+             "This appendix reproduces the functions that carry the protocol's guarantees: "
+             "demographic matching, participant-disjoint splits, the classifier head and the "
+             "locked calibration, taken directly from the project's source package "
+             "\\texttt{pdvoice}. Imports, module-level constants and the longer docstrings are omitted. The "
              "complete code, including the analysis scripts named in the text, is in the "
              "project repository, "
              "\\texttt{github.com/uaday/pd-research}, which is private and available on "
@@ -313,7 +326,7 @@ def appendix_b():
         path = f"src/pdvoice/{rel}".replace("_", "\\_")
         parts += ["\\needspace{8\\baselineskip}",
                   f"\\begin{{lstlisting}}[title={{\\texttt{{{path}}}}}]",
-                  source_of(rel, names), "\\end{lstlisting}", ""]
+                  short_docstrings(source_of(rel, names)), "\\end{lstlisting}", ""]
     (THESIS / "appendix_b_code.tex").write_text("\n".join(parts), encoding="utf-8")
 
 

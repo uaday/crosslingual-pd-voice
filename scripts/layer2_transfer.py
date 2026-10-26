@@ -27,6 +27,7 @@ from sklearn.model_selection import GroupShuffleSplit
 
 from pdvoice.config import EMBEDDINGS, FIGURES, LOGS, SEED, VAL_FRACTION, ensure_dirs
 from pdvoice.data import LOADERS
+from pdvoice.data.common_tasks import common_task_mask
 from pdvoice.cohort import age_match_ids, load_mpower_cohort
 from pdvoice.preprocess import WINDOW_MODES, quality_control
 
@@ -267,6 +268,8 @@ def main() -> None:
             print(f"      sliced layer {li} of {allf.name}: X={X.shape}")
         else:
             X = embed(df, args.model, args.layer, cache, args.window)
+        keep_t = common_task_mask(df, ds)          # speech tasks both groups recorded
+        df, X = df[keep_t].reset_index(drop=True), np.asarray(X)[keep_t]
         y_rec = df["label"].astype(int).to_numpy()
         stem = f"layer2__{args.model}__{ds}__{args.task}__L{args.layer}{wtag}"
 

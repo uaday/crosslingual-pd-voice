@@ -31,8 +31,8 @@ def fit_mlp_head(
     hidden: int = 256,
     dropout: float = 0.3,
     lr: float = 1e-3,
-    max_epochs: int = 200,
-    patience: int = 20,
+    max_epochs: int = 1000,
+    patience: int = 50,
     device: str | None = None,
     seed: int = 42,
 ):
@@ -43,6 +43,12 @@ def fit_mlp_head(
 
     ``seed`` makes weight-init and dropout deterministic so results are reproducible
     run-to-run (an unseeded head swung AUROC by up to ~0.04 on the XLS-R embeddings).
+
+    Training is full-batch, so one epoch is one step. The earlier limit of 200 steps with
+    patience 20 stopped the head on the full uncorrected mPower cohort while validation
+    loss was still falling (within-mPower 0.761, against 0.854 when trained to
+    convergence); 1,000 steps with patience 50 lets it converge, and on the smaller
+    age-matched cohorts it changes nothing because early stopping ends training first.
     """
     import torch
     import torch.nn as nn

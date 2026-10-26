@@ -6,8 +6,8 @@ age differences inside each bin. This reports, for 2-, 5- and 10-year bins: part
 kept, remaining mean age gap, how well age alone still predicts the label, and the voice
 AUROC (linear probe, participant-disjoint 5-fold CV, five matching seeds).
 
-Datasets: mPower vowel (one recording per participant, XLS-R layer 15) and Bridge2AI
-connected speech (PD vs healthy controls, layer 15).
+Datasets: mPower vowel (one recording per participant, XLS-R layer 11) and Bridge2AI
+connected speech (PD vs healthy controls, layer 11).
 
 Run:  .venv\\Scripts\\python.exe -u scripts\\age_bin_width.py
 """

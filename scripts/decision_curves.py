@@ -67,6 +67,14 @@ def curve(y, p, prev):
 
 
 def main() -> None:
+    import argparse
+    global TARGET_PREV
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--prevalence", type=float, default=TARGET_PREV,
+                    help="screening prevalence; other than 0.187 writes "
+                         "decision_curves__prev<p>.csv/json and draws no figure")
+    TARGET_PREV = ap.parse_args().prevalence
+    tag = "" if abs(TARGET_PREV - 0.187) < 1e-9 else f"__prev{TARGET_PREV:g}"
     d = pd.read_csv(LOGS / "classifier_predictions.csv")
     out, summary = [], {}
     for cohort in ("confounded", "age-matched"):
@@ -76,7 +84,8 @@ def main() -> None:
                 continue
             y, p = s.y.to_numpy().astype(int), s.p.to_numpy().astype(float)
             prev_cohort = y.mean()
-            if cohort == "age-matched":
+            if cohort == "age-matched" or tag:
+                # move the probabilities from the cohort prevalence to the screening one
                 p = 1 / (1 + np.exp(-(logit(p) + logit(TARGET_PREV) - logit(prev_cohort))))
             c = curve(y, p, TARGET_PREV)
             c["cohort"], c["model"] = cohort, name
@@ -94,10 +103,12 @@ def main() -> None:
                 gain_per_1000_at_0_10=round(float(1000 * gain[c.pt == 0.10].iloc[0]), 2),
                 flagged_at_0_10=round(float(c.flagged[c.pt == 0.10].iloc[0]), 3))
     D = pd.concat(out)
-    D.to_csv(LOGS / "decision_curves.csv", index=False)
-    (LOGS / "decision_curves.json").write_text(json.dumps(summary, indent=2))
+    D.to_csv(LOGS / f"decision_curves{tag}.csv", index=False)
+    (LOGS / f"decision_curves{tag}.json").write_text(json.dumps(summary, indent=2))
     for k, v in summary.items():
         print(f"{k:<40} {v}")
+    if tag:
+        return
 
     plt.rcParams.update({"font.size": 9})
     fig, axes = plt.subplots(1, 2, figsize=(7.4, 3.2), sharey=True)

@@ -47,6 +47,7 @@ from bridge2ai_followups import family_ids, load  # noqa: E402
 from bridge2ai_transfer import SUFFIX, LAYER  # noqa: E402
 from bridge2ai_transfer_agecheck import subsets  # noqa: E402
 from demographic_erasure import load_external  # noqa: E402
+from unified_experiments import _ensure_two_class_val  # noqa: E402
 
 from pdvoice.calibration import select_best_by_brier  # noqa: E402
 from pdvoice.cohort import age_match_ids  # noqa: E402
@@ -88,6 +89,7 @@ def mlp_logits(head, X):
 
 def locked(X, y, g, seed):
     tr, va = next(GroupShuffleSplit(1, test_size=VAL_FRACTION, random_state=seed).split(X, y, g))
+    tr, va = _ensure_two_class_val(tr, va, np.asarray(y), np.asarray(g), seed)
     head, vlog = fit_mlp_head(X[tr], y[tr], X[va], y[va], seed=seed)
     _, cal = select_best_by_brier(vlog, y[va])
     return head, cal

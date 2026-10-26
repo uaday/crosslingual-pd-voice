@@ -22,6 +22,17 @@ Labels (group column, then label):
                 their voice, to have a condition affecting speech or voice
                 (control.tsv diagnosis_c_ac = 'Yes') -> label <NA>. Not a clean
                 healthy control, so excluded from PD-vs-control analyses.
+    'control_with_diagnosis'
+                a control with a clinician-confirmed diagnosis in any other diagnosis table
+                -> label <NA>.
+    'pd_non_us' / 'control_non_us'
+                a patient or control recruited outside the USA -> label <NA>. Every Canadian
+                participant in the PD-vs-control cohort is a patient (there are no
+                controls), so recruitment country predicts the label perfectly and age
+                matching does not remove it. PD-vs-control analyses therefore use US
+                participants only, as Shukla et al. (JMIR 2026)
+                did. Canadian patients stay in the manifest for within-country comparisons
+                with other disorders.
 NOTE: the control flag is eligibility.is_control_participant. control.tsv lists
 everyone so flagged plus some who are not; its single column is the assessor's
 judgment above, not a control indicator. Shukla et al. (JMIR 2026) took every participant in
@@ -90,8 +101,20 @@ def _read(root: Path, rel: str) -> pd.DataFrame:
     return pd.read_csv(root / "phenotype" / rel, sep="\t", dtype=str)
 
 
+def confirmed_ids(table: pd.DataFrame) -> set[str]:
+    """Participants with a clinician-confirmed (gold-standard) diagnosis in one diagnosis
+    table. Every table records 'Yes' except copd_and_asthma, which records the confirmed
+    type instead ('Asthma only', 'COPD only', 'Both COPD and asthma')."""
+    gold = [c for c in table.columns if "gold_standard_diagnosis" in c and "confirmation" not in c]
+    if not gold:
+        return set()
+    v = table[gold[0]]
+    ok = (v == "Yes") | v.isin(["Asthma only", "COPD only", "Both COPD and asthma"])
+    return set(table.participant_id[ok])
+
+
 def bridge2ai_participants(root=BRIDGE2AI_DIR) -> pd.DataFrame:
-    """One row per participant: participant_id, group, label, age, sex, hy."""
+    """One row per participant: participant_id, group, label, age, sex, country, hy."""
     root = Path(root)
     elig = _read(root, "enrollment/eligibility.tsv").drop_duplicates("participant_id")
     pdx = _read(root, "diagnosis/parkinsons_disease.tsv").drop_duplicates("participant_id")
@@ -109,11 +132,21 @@ def bridge2ai_participants(root=BRIDGE2AI_DIR) -> pd.DataFrame:
     p.loc[p.participant_id.isin(control & voice_condition), "group"] = "control_voice_condition"
     p.loc[p.participant_id.isin(gold), "group"] = "pd"
     p.loc[p.participant_id.isin((in_pd_table - gold) | (gold & control)), "group"] = "ambiguous"
-    p["label"] = p.group.map({"pd": 1, "control": 0}).astype("Int64")
-
-    d = dem[["participant_id", "age", "sex_at_birth"]].rename(columns={"sex_at_birth": "sex"})
+    d = dem[["participant_id", "age", "sex_at_birth", "country"]].rename(
+        columns={"sex_at_birth": "sex"})
     d["age"] = pd.to_numeric(d.age.str.replace("90 and above", "90", regex=False), errors="coerce")
     p = p.merge(d, on="participant_id", how="left")
+    # a control with any clinician-confirmed diagnosis is not a healthy control
+    diagnosed = set()
+    for f in (root / "phenotype" / "diagnosis").glob("*.tsv"):
+        if f.stem in ("control", "parkinsons_disease"):
+            continue
+        diagnosed |= confirmed_ids(pd.read_csv(f, sep="\t", dtype=str))
+    p.loc[(p.group == "control") & p.participant_id.isin(diagnosed), "group"] = \
+        "control_with_diagnosis"
+    abroad = p.group.isin(["pd", "control"]) & (p.country != "USA")
+    p.loc[abroad, "group"] = p.loc[abroad, "group"] + "_non_us"
+    p["label"] = p.group.map({"pd": 1, "control": 0}).astype("Int64")
 
     stage = pdx.set_index("participant_id").diagnosis_parkinsons_ds.str.extract(r"Stage (\d)")[0]
     p["hy"] = pd.to_numeric(p.participant_id.map(stage), errors="coerce").astype("Int64")
@@ -149,6 +182,7 @@ def load_bridge2ai(root=BRIDGE2AI_DIR, recording_meta: bool = False) -> pd.DataF
             "age": info["age"] if info is not None else pd.NA,
             "sex": info["sex"] if info is not None else pd.NA,
             "hy": info["hy"] if info is not None else pd.NA,
+            "country": info["country"] if info is not None else pd.NA,
         }
         if recording_meta:
             side = wav.with_suffix(".json")

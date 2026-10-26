@@ -123,7 +123,7 @@ def mcnemar_test(y, pred1, pred2, exact: bool | None = None) -> dict:
     ``exact`` selects the binomial test over the chi-square approximation. Left as None
     it follows the standard rule -- exact when n01 + n10 < 25 -- because the chi-square
     approximation is unreliable on few discordant pairs, and with cohorts of 37-50
-    speakers (F-34) that is the case we are usually in.
+    speakers that is the case we are usually in.
 
     Returns n01, n10, statistic, p_value and which method was used. ``statistic`` is the
     continuity-corrected chi-square, or NaN when the exact test was used.

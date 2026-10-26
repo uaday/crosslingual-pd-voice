@@ -84,7 +84,11 @@ def probe_binary(X, y, groups, n_splits=5):
 
 
 def probe_multiclass(X, y, groups, n_splits=5):
-    """Accuracy of recovering a categorical attribute; chance = 1/n_classes."""
+    """Accuracy of recovering a categorical attribute; chance = majority-class share.
+
+    1/n_classes understates chance when the classes are unbalanced (600 mPower vowels
+    against a few hundred from each clinical dataset), so the always-majority rate is used.
+    """
     y = np.asarray(y)
     classes = np.unique(y)
     if len(classes) < 2:
@@ -94,7 +98,7 @@ def probe_multiclass(X, y, groups, n_splits=5):
         clf = make_pipeline(StandardScaler(), LogisticRegression(max_iter=3000))
         clf.fit(X[tr], y[tr])
         pred[te] = clf.predict(X[te])
-    return float(accuracy_score(y, pred)), 1.0 / len(classes)
+    return float(accuracy_score(y, pred)), float(pd.Series(y).value_counts(normalize=True).iloc[0])
 
 
 def probe_continuous(X, y, groups, n_splits=5):

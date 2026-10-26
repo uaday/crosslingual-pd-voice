@@ -50,6 +50,7 @@ from demographic_erasure import load_external, score, train_locked  # noqa: E402
 from pdvoice.cohort import age_match_ids, demographic_match_ids  # noqa: E402
 from pdvoice.config import BRIDGE2AI_DIR, EMBEDDINGS, LOGS  # noqa: E402
 from pdvoice.data import LOADERS  # noqa: E402
+from pdvoice.data.common_tasks import common_task_mask  # noqa: E402
 
 MODEL = "xls-r-300m"
 LAYER = int(os.environ.get("PDV_LAYER", 15))  # Bridge2AI layer; 8 is chosen inside Bridge2AI (bridge2ai_layer_select.py)
@@ -76,7 +77,8 @@ def load(task, base, groups):
     emb = pd.DataFrame({"path": d["path"].astype(str)})
     emb["row"] = np.arange(len(emb))
     df = emb.merge(base, on="path", how="inner")
-    df = df[df.group.isin(groups)].dropna(subset=["age"]).reset_index(drop=True)
+    df = df[df.group.isin(groups)].dropna(subset=["age"])
+    df = df[common_task_mask(df, "bridge2ai")].reset_index(drop=True)
     return df, d["X"][df.row.to_numpy()].astype(np.float32)
 
 
