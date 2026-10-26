@@ -36,6 +36,7 @@ from sklearn.preprocessing import StandardScaler
 from pdvoice.cohort import age_match_ids
 from pdvoice.config import EMBEDDINGS, LOGS
 from pdvoice.data import LOADERS
+from pdvoice.data.common_tasks import common_task_mask
 from pdvoice.eval.discrimination import bootstrap_ci
 
 MODEL = "xls-r-300m"
@@ -50,7 +51,8 @@ def load_task(base, task):
     emb["row"] = np.arange(len(emb))
     df = emb.merge(base, on="path", how="inner")
     assert df.row.is_unique
-    df = df[df.group.isin(["pd", "control"])].dropna(subset=["age"]).reset_index(drop=True)
+    df = df[df.group.isin(["pd", "control"])].dropna(subset=["age"])
+    df = df[common_task_mask(df, "bridge2ai")].reset_index(drop=True)
     df["label"] = df.label.astype(int)
     return df, d["X"][df.row.to_numpy()].astype(np.float32)
 

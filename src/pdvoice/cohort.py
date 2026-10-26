@@ -102,7 +102,7 @@ def demographic_match_ids(df: pd.DataFrame, on: tuple[str, ...] = ("age",),
     ``on=("age",)`` reproduces :func:`age_match_ids`. ``on=("age", "sex")`` matches within
     each age-bin x sex cell, which matters because **the two confounds are independent**:
     in mPower the patient group is 34.6% female against 18.6% of controls, and age matching
-    only narrows that to 33.7% vs 22.7% (chi-square p = 5.6e-05, still imbalanced). Sex
+    only narrows that to 33.4% vs 22.3% (chi-square p = 5.6e-05, still imbalanced). Sex
     alone predicts the label at AUROC 0.58, and the embeddings encode sex at 0.97 -- so a
     model has full access to it whether we intend that or not.
 

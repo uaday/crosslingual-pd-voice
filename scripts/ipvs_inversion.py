@@ -2,14 +2,14 @@
 
 IPVS patients are 20.5 years older than its controls, the same direction as mPower
 (27.5 years). A model that had mainly learned "older = Parkinson's" should therefore score
-ABOVE chance on IPVS. It scores 0.287 (vowel, L11). This script asks what the scores track.
+ABOVE chance on IPVS. It scores below 0.5 instead. This script asks what the scores track.
 
 IPVS has three groups: 15 young controls (yhc), 22 elderly controls (ehc) and 28 patients
 (pd). The 20.5-year gap is driven by the young controls; patients against elderly controls
 is the near-age-matched contrast inside the corpus. A 44.1 kHz recording batch contains
 patients only (F-17).
 
-For each saved set of subject-level predictions from a locked mPower model it reports:
+For the locked mPower models of Table 4.8 (layer 11, five seeds, averaged) it reports:
   * AUROC on all participants, on patients vs elderly controls, and on patients vs young
     controls, and the mean score per group
   * Spearman correlation of the score with age, overall and within each class
@@ -26,24 +26,42 @@ import json
 
 import numpy as np
 import pandas as pd
-from scipy.stats import mannwhitneyu, spearmanr
+from scipy.stats import spearmanr
 from sklearn.metrics import roc_auc_score
 
 from pdvoice.config import LOGS
 from pdvoice.data.demographics import attach_age
 from pdvoice.data.ipvs import load_ipvs
 
-PRED_FILES = {
-    "vowel L11 (Table: transfer A)": "layer2__xls-r-300m__ipvs__vowel__L11__subject_preds.csv",
-    "speech L11 (Table: transfer A)": "layer2__xls-r-300m__ipvs__speech__L11__subject_preds.csv",
-    "vowel L15": "layer2__xls-r-300m__ipvs__vowel__L15__subject_preds.csv",
-    "vowel L24 (final layer)": "layer2__xls-r-300m__ipvs__vowel__LNone__subject_preds.csv",
-    "vowel L15, age-matched model": "agematched__xls-r-300m__L15__ipvs_subject_preds.csv",
+# The same five-seed, layer-11 predictions as Table 4.8 (scripts/unified_experiments.py),
+# so every number here agrees with the transfer tables by construction.
+SOURCES = {
+    "vowel, uncorrected model": dict(condition="uncorrected", target_task="vowel"),
+    "speech, uncorrected model": dict(condition="uncorrected", target_task="speech"),
+    "vowel, age-matched model": dict(condition="agematched", target_task="vowel"),
+    "speech, age-matched model": dict(condition="agematched", target_task="speech"),
 }
 
 
 def auc(y, p):
     return float(roc_auc_score(y, p)) if len(set(y)) == 2 else float("nan")
+
+
+def one_run(p: pd.DataFrame) -> dict:
+    """Every diagnostic for one set of participant-level scores."""
+    y = p.label.to_numpy()
+    r = dict(n=len(p), auroc_all=auc(y, p.p))
+    pe = p[p.group.isin(["pd", "ehc"])]
+    r["auroc_pd_vs_elderly"] = auc(pe.label, pe.p)
+    a = p.dropna(subset=["age"])
+    r["age_only_auroc"] = auc(a.label, a.age)
+    c = a[a.label == 0]
+    r["spearman_score_age_controls"] = (float(spearmanr(c.age, c.p)[0]), None)
+    no44 = p[~p.any44]
+    r["auroc_without_44k_participants"] = auc(no44.label, no44.p)
+    pdp = p[p.label == 1]
+    r["patients_44k_minus_16k_score"] = float(pdp[pdp.any44].p.mean() - pdp[~pdp.any44].p.mean())
+    return r
 
 
 def main() -> None:
@@ -59,43 +77,26 @@ def main() -> None:
     print("patients in the 44.1 kHz batch:", int(subj[subj.label == 1].any44.sum()),
           "| controls in it:", int(subj[subj.label == 0].any44.sum()), "\n")
 
+    S = pd.read_csv(LOGS / "unified" / "scores.csv.gz")
+    S = S[(S.exp == "exp1") & (S.target == "ipvs") & (S.target_cohort == "released")]
     out = {}
-    for name, fn in PRED_FILES.items():
-        f = LOGS / fn
-        if not f.exists():
-            print(f"(missing {fn})")
-            continue
-        raw = pd.read_csv(f)
-        # discrimination uses the ranking score where it was saved (calibration.RankingMap)
-        if "r" in raw.columns:
-            raw = raw.drop(columns="p").rename(columns={"r": "p"})
-        p = raw[["subject_id", "p"]].merge(subj, on="subject_id", how="inner")
-        y = p.label.to_numpy()
-        r = dict(n=len(p), auroc_all=auc(y, p.p))
-        pe = p[p.group.isin(["pd", "ehc"])]
-        py = p[p.group.isin(["pd", "yhc"])]
-        r["auroc_pd_vs_elderly"] = auc(pe.label, pe.p)
-        r["auroc_pd_vs_young"] = auc(py.label, py.p)
-        r["mean_score_by_group"] = p.groupby("group").p.mean().round(3).to_dict()
-        a = p.dropna(subset=["age"])
-        r["age_only_auroc"] = auc(a.label, a.age)
-        rho, pv = spearmanr(a.age, a.p)
-        r["spearman_score_age_all"] = (round(float(rho), 3), round(float(pv), 4))
-        for cls, lab in ((1, "patients"), (0, "controls")):
-            s = a[a.label == cls]
-            rho, pv = spearmanr(s.age, s.p)
-            r[f"spearman_score_age_{lab}"] = (round(float(rho), 3), round(float(pv), 4))
-        no44 = p[~p.any44]
-        r["auroc_without_44k_participants"] = auc(no44.label, no44.p)
-        r["n_without_44k"] = int(len(no44))
-        pdp = p[p.label == 1]
-        if pdp.any44.any() and (~pdp.any44).any():
-            u = mannwhitneyu(pdp[pdp.any44].p, pdp[~pdp.any44].p)
-            r["patients_44k_vs_16k_mean_score"] = (round(float(pdp[pdp.any44].p.mean()), 3),
-                                                   round(float(pdp[~pdp.any44].p.mean()), 3),
-                                                   round(float(u.pvalue), 4))
+    for name, key in SOURCES.items():
+        g = S[(S.condition == key["condition"]) & (S.target_task == key["target_task"])]
+        per_seed = []
+        for _, run in g.groupby("seed"):
+            # discrimination uses the ranking score (calibration.RankingMap)
+            p = (run.rename(columns={"s": "subject_id"})[["subject_id", "r"]]
+                 .rename(columns={"r": "p"}).merge(subj, on="subject_id", how="inner"))
+            per_seed.append(one_run(p))
+        r = {"n": per_seed[0]["n"], "n_seeds": len(per_seed)}
+        for k in per_seed[0]:
+            if k == "n":
+                continue
+            v = [x[k] for x in per_seed]
+            r[k] = (round(float(np.mean([t[0] for t in v])), 3), None)                 if isinstance(v[0], tuple) else float(np.mean(v))
+        r["per_seed_pd_vs_elderly"] = [round(x["auroc_pd_vs_elderly"], 3) for x in per_seed]
         out[name] = r
-        print(f"=== {name}  (n={r['n']})")
+        print(f"=== {name}  (n={r['n']}, {len(per_seed)} seeds)")
         for k, v in r.items():
             if k != "n":
                 print(f"   {k:<34} {v if not isinstance(v, float) else round(v, 3)}")

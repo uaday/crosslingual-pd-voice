@@ -32,6 +32,7 @@ from bridge2ai_agematch import subject_scores  # noqa: E402
 from pdvoice.cohort import age_match_ids  # noqa: E402
 from pdvoice.config import EMBEDDINGS, LOGS  # noqa: E402
 from pdvoice.data import LOADERS  # noqa: E402
+from pdvoice.data.common_tasks import common_task_mask  # noqa: E402
 
 MODEL = "xls-r-300m"
 SEEDS = [42, 43, 44, 45, 46]
@@ -47,7 +48,8 @@ def main() -> None:
         emb = pd.DataFrame({"path": d["path"].astype(str)})
         emb["row"] = np.arange(len(emb))
         df = emb.merge(base, on="path", how="inner")
-        df = df[df.group.isin(["pd", "control"])].dropna(subset=["age"]).reset_index(drop=True)
+        df = df[df.group.isin(["pd", "control"])].dropna(subset=["age"])
+        df = df[common_task_mask(df, "bridge2ai")].reset_index(drop=True)
         df["label"] = df.label.astype(int)
         y = df.label.to_numpy()
         XA = d["X"][df.row.to_numpy()]

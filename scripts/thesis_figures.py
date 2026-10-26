@@ -146,8 +146,8 @@ def f_labels_vs_age() -> None:
     ax.bar(x + w/2, dt, w, label="Mean transfer (IPVS, NeuroVoz, MDVR-KCL)", color=C_MATCH)
     ax.axhline(0, color="k", lw=0.9)
     for xi, (a_, m_) in enumerate(zip(dw, dt)):
-        ax.text(xi - w/2, a_ + (.006 if a_ >= 0 else -.018), f"{a_:+.3f}", ha="center", fontsize=7.5)
-        ax.text(xi + w/2, m_ + (.006 if m_ >= 0 else -.018), f"{m_:+.3f}", ha="center", fontsize=7.5)
+        ax.text(xi - w/2, a_ + (.006 if a_ >= 0 else -.018), "<0.001" if abs(a_) < 0.0005 else f"{a_:+.3f}", ha="center", fontsize=7.5)
+        ax.text(xi + w/2, m_ + (.006 if m_ >= 0 else -.018), "<0.001" if abs(m_) < 0.0005 else f"{m_:+.3f}", ha="center", fontsize=7.5)
     ax.set_xticks(x); ax.set_xticklabels([n for n, _ in rows], fontsize=8)
     ax.set_ylabel("Change in AUROC from uncorrected")
     ax.legend(frameon=False, fontsize=7.5)
@@ -275,75 +275,6 @@ def f_agegap() -> None:
     _save(fig, "fig_age_gap")
 
 
-def f_two_designs() -> None:
-    """Figure 4.3: the two transfer designs side by side, drawn from the logged results.
-
-    Replaces the hand-exported Excalidraw diagram, which was never exported; the numbers
-    in the boxes are read from the same logs as Tables 4.5 to 4.7.
-    """
-    from matplotlib.patches import FancyBboxPatch
-
-    ta = []
-    for ds, task in [("neurovoz", "vowel"), ("neurovoz", "ddk"), ("mdvr_kcl", "speech"),
-                     ("ipvs", "vowel"), ("ipvs", "speech"), ("neurovoz", "speech")]:
-        ta.append(_j(f"layer2__xls-r-300m__{ds}__{task}__L11.json")["auroc"])
-    sp = pd.DataFrame(_j("speech_agematch.json")["runs"])
-    tg = [c for c in sp.columns if c.startswith("-> ")]
-
-    def span(cohort):
-        v = sp[sp.cohort == cohort].groupby("source")[tg].mean(numeric_only=True).to_numpy()
-        v = v[~np.isnan(v)]
-        return v.min(), v.max()
-
-    fl, fh = span("full")
-    ml, mh = span("age-matched")
-    fills = {"data": "#DCE6F2", "train": "#F6DDE4", "target": "#EDEDED",
-             "bad": "#F4CCCC", "mixed": "#FFF2CC"}
-
-    with plt.rc_context({"axes.grid": False, "figure.autolayout": False}):
-        fig, ax = plt.subplots(figsize=(7.2, 5.6))
-        ax.set_xlim(0, 10)
-        ax.set_ylim(0, 10.6)
-        ax.axis("off")
-
-        def box(x, y, text, kind, w=4.0, h=1.45):
-            ax.add_patch(FancyBboxPatch((x, y), w, h, boxstyle="round,pad=0.04,rounding_size=0.18",
-                                        fc=fills[kind], ec="#444444", lw=0.9))
-            ax.text(x + w / 2, y + h / 2, text, ha="center", va="center", fontsize=9.5,
-                    linespacing=1.35)
-
-        def arrow(x, y0, y1):
-            ax.annotate("", xy=(x, y1), xytext=(x, y0),
-                        arrowprops=dict(arrowstyle="-|>", lw=1.0, color="#444444"))
-
-        for x0, title in ((0.3, "Design A: the proposed system"),
-                          (5.7, "Design B: a separate observation")):
-            ax.text(x0 + 2.0, 10.25, title, ha="center", va="center", fontsize=10.5,
-                    fontweight="bold")
-        ys = [8.35, 6.05, 3.75, 1.45]
-        a = ["mPower sustained vowels\nself-reported labels",
-             "train the head, then lock\ncalibration and threshold",
-             "NeuroVoz, IPVS, MDVR-KCL\nvowel, DDK and speech",
-             f"AUROC {min(ta):.3f} to {max(ta):.3f}\nthree of six runs inverted"]
-        b = ["one clinical dataset\nconnected speech\nclinician labels",
-             "a fresh head on the\nsame frozen encoder",
-             "the other clinical datasets\nconnected speech",
-             f"uncorrected {fl:.3f} to {fh:.3f}\nage-matched {ml:.3f} to {mh:.3f}"]
-        kinds_a = ["data", "train", "target", "bad"]
-        kinds_b = ["data", "train", "target", "mixed"]
-        for x, texts, kinds in ((0.3, a, kinds_a), (5.7, b, kinds_b)):
-            for y, t, k in zip(ys, texts, kinds):
-                box(x, y, t, k)
-            for y0, y1 in zip(ys[:-1], ys[1:]):
-                arrow(x + 2.0, y0, y1 + 1.45)
-        ax.text(5.0, 0.55,
-                "The encoder is the same frozen model in both designs. Design B trains a new head "
-                "from random\ninitialisation, on a different task, dataset and label source, so it "
-                "does not repair design A.",
-                ha="center", va="center", fontsize=8.5, style="italic", color="#333333")
-        _save(fig, "fig4_3_two_designs")
-
-
 def f_experiment_map() -> None:
     """Which dataset trains, which tests, and under which design: one grid for the reader."""
     from matplotlib.patches import FancyArrowPatch, FancyBboxPatch
@@ -420,63 +351,6 @@ def f_experiment_map() -> None:
     _save(fig, "fig4_0_experiment_map")
 
 
-def f_investigation_chain() -> None:
-    """The order of the experiments: each answer raises the question the next one asks."""
-    from matplotlib.patches import FancyArrowPatch, FancyBboxPatch
-
-    steps = [  # (design label, colour, question, experiment, answer, section)
-        ("A", "#4E79A7", "Does the proposed system\ntransfer to new datasets?",
-         "Train on mPower vowels, lock,\ntest on three clinical datasets",
-         "No: 0.777 at home, 0.40-0.62\nabroad; 14 of 30 runs inverted", "4.4.1"),
-        ("A", "#4E79A7", "Why does it fail: noisy\nlabels or the age gap?",
-         "Same model on confident labels\nand on an age-matched cohort",
-         "Age: matching closes the gap\nfrom 29.6 to 0.9 points", "4.4.2"),
-        ("A", "#4E79A7", "Does a better model\nfix it?",
-         "5 encoders, 5 classifiers, feature\nsets, adaptation, windowing",
-         "No: all within about 0.06\nonce age is controlled", "4.4.3"),
-        ("B", "#F28E2B", "Does the recording\ntask matter?",
-         "Train on connected speech of one\nclinical dataset, test on the others",
-         "Speech transfers, but on small\ndatasets it cannot beat the vowel", "4.4.4-5"),
-        ("C/D", "#59A14F", "With the same speakers,\ndoes speech beat the vowel?",
-         "Bridge2AI: all tasks from the\nsame people, age-matched",
-         "Yes: 0.959 against 0.696, and\nspeech transfers at 0.75-0.93", "4.4.6-7"),
-        ("S", "#8C8C8C", "Is the speech signal specific\nto Parkinson's disease?",
-         "Bridge2AI participants with\nother disorders",
-         "No: cognitive impairment\nscores almost as high", "4.4.8"),
-    ]
-    fig = plt.figure(figsize=(7.4, 6.2))
-    fig.set_layout_engine(None)
-    ax = fig.add_axes([0, 0, 1, 1]); ax.axis("off")
-    ax.set_xlim(0, 100); ax.set_ylim(-3, 100)
-    cols = [(9, 27, "Question"), (37, 30, "Experiment"), (68, 30, "Answer")]
-    for x, w, h in cols:
-        ax.text(x + w / 2, 97, h, ha="center", va="center", fontsize=10, fontweight="bold")
-    h, gap, y0 = 12.6, 3.0, 93
-    for i, (d, col, q, e, a, sec) in enumerate(steps):
-        y = y0 - (i + 1) * h - i * gap
-        ax.add_patch(FancyBboxPatch((1, y + 1), 6, h - 2, boxstyle="round,pad=0.3",
-                                    fc=col, ec="none"))
-        ax.text(4, y + h / 2 + 1.6, f"{i + 1}", ha="center", va="center", fontsize=11,
-                fontweight="bold", color="white")
-        ax.text(4, y + h / 2 - 2.2, d, ha="center", va="center", fontsize=7.5, color="white")
-        for (x, w, _), txt, fc in zip(cols, (q, e, a), ("#F2F2F2", "#F2F2F2", "#FCE8D5")):
-            ax.add_patch(FancyBboxPatch((x, y + 0.8), w, h - 1.6, boxstyle="round,pad=0.4",
-                                        fc=fc, ec="#555555", lw=0.7))
-            ax.text(x + w / 2, y + h / 2, txt, ha="center", va="center", fontsize=8)
-        for x0, x1 in ((36, 37), (67, 68)):
-            ax.add_patch(FancyArrowPatch((x0 - 0.4, y + h / 2), (x1 + 0.2, y + h / 2),
-                                         arrowstyle="-|>", mutation_scale=9, color="#333333"))
-        ax.text(97, y + h - 2.2, f"Sec. {sec}", ha="right", va="top", fontsize=6.5,
-                color="#555555")
-        if i < len(steps) - 1:
-            ax.add_patch(FancyArrowPatch((83, y + 0.4), (22.5, y - gap - 0.4),
-                                         connectionstyle="arc3,rad=0.0", arrowstyle="-|>",
-                                         mutation_scale=9, color="#AAAAAA", lw=0.8))
-    ax.text(50, -1.5, "Each answer raises the question of the next row. Colours and letters "
-            "match the experiment map.", ha="center", fontsize=7.5, style="italic")
-    _save(fig, "fig4_0b_investigation_chain")
-
-
 def f_confound_diagram() -> None:
     """How mPower recruitment ties age to the diagnosis, so a model can score by detecting age."""
     from matplotlib.patches import FancyArrowPatch, FancyBboxPatch
@@ -519,16 +393,198 @@ def f_confound_diagram() -> None:
 
     arrow((74.6, 23), (83.4, 23), lw=1.4)
 
+    R = pd.read_csv(LOGS / "unified" / "runs.csv")
+    home = R[(R.source == "mpower") & (R.condition == "uncorrected")]
+    age_only = home[home.exp == "within_age_only"].auroc.mean()
+    voice = home[home.exp == "within"].auroc.mean()
     ax.text(50, 0.5, "Through the gap, a model can predict the diagnosis by reading age from the "
-            "voice: age alone scores 0.922, the voice model 0.796.", ha="center", fontsize=7.5,
-            style="italic")
+            f"voice: age alone scores {age_only:.3f}, the voice model {voice:.3f}.",
+            ha="center", fontsize=7.5, style="italic")
     _save(fig, "fig4_0c_confound_diagram")
+
+
+def _box(ax, x, y, w, h, txt, fc, fs=8.5, bold_first=None, ec="#555555", lw=0.8):
+    from matplotlib.patches import FancyBboxPatch
+    ax.add_patch(FancyBboxPatch((x, y), w, h, boxstyle="round,pad=0.3", fc=fc, ec=ec, lw=lw))
+    ax.text(x + w / 2, y + h / 2, txt, ha="center", va="center", fontsize=fs, wrap=True)
+
+
+def _arrow(ax, p, q, ls="-", col="#3A3F4B", lw=1.3):
+    from matplotlib.patches import FancyArrowPatch
+    ax.add_patch(FancyArrowPatch(p, q, arrowstyle="-|>", mutation_scale=11, color=col, lw=lw,
+                                 linestyle=ls))
+
+
+def f_score_distributions() -> None:
+    """Participant scores of patients and controls in four settings (one seed)."""
+    S = pd.read_csv(LOGS / "unified" / "scores.csv.gz")
+    panels = [("(a) mPower, as released", dict(exp="within", source="mpower",
+                                               condition="uncorrected")),
+              ("(b) mPower, age-matched", dict(exp="within", source="mpower",
+                                               condition="agematched")),
+              ("(c) Bridge2AI speech, age-matched (US)",
+               dict(exp="within", source="bridge2ai", source_task="speech",
+                    condition="agematched")),
+              ("(d) mPower model on IPVS vowels", dict(exp="exp1", condition="uncorrected",
+                                                       target="ipvs", target_task="vowel",
+                                                       target_cohort="released"))]
+    fig, axes = plt.subplots(2, 2, figsize=(7.2, 4.8), sharex=True)
+    bins = np.linspace(0, 1, 21)
+    from sklearn.metrics import roc_auc_score
+    for ax, (title, key) in zip(axes.ravel(), panels):
+        m = np.ones(len(S), bool)
+        for k, v in key.items():
+            m &= (S[k] == v).to_numpy()
+        g = S[m & (S.seed == 42).to_numpy()]
+        for lab, col, name in ((0, "#4E79A7", "controls"), (1, "#E15759", "patients")):
+            x = g.r[g.y == lab]
+            ax.hist(x, bins=bins, density=True, alpha=0.55, color=col,
+                    label=f"{name} (n={len(x)})")
+        ax.set_title(f"{title}\nAUROC {roc_auc_score(g.y, g.r):.2f} (seed 42)", fontsize=8)
+        ax.legend(fontsize=6.5, frameon=False)
+        ax.tick_params(labelsize=7)
+    for ax in axes[1]:
+        ax.set_xlabel("model score (ranking map)", fontsize=8)
+    for ax in axes[:, 0]:
+        ax.set_ylabel("density", fontsize=8)
+    _save(fig, "fig4_score_distributions")
+
+
+TENS = {10: "ten", 20: "twenty", 30: "thirty", 40: "forty", 50: "fifty"}
+
+
+def f_preprocessing() -> None:
+    """The four pre-processing stages and what each discards (Figure 3.1)."""
+    fig = plt.figure(figsize=(7.8, 4.6))
+    fig.set_layout_engine(None)
+    ax = fig.add_axes([0, 0, 1, 1]); ax.axis("off")
+    ax.set_xlim(0, 100); ax.set_ylim(0, 100)
+    green, orange = "#E2F2E0", "#FCE4CC"
+    pause = json.loads((LOGS / "pause_information.json").read_text())
+    keep = {ds: {int(k): 100 * (1 - v) for k, v in g["pause_frac"].items()}
+            for ds, g in pause["per_group"].items()}
+    timing_ipvs = next(r["auroc"] for r in pause["results"] if r["dataset"] == "ipvs")
+    win = json.loads((LOGS / "speech_windows.json").read_text())
+    stages = [("Resample\n16 kHz mono", "loses nothing:\nall files already mono"),
+              ("Remove non-speech\nvowel: trim 30 dB\nspeech: Silero VAD",
+               f"loses pauses, hesitation,\nspeech rate (worth {timing_ipvs:.3f}\non IPVS alone)"),
+              ("Fixed window\nvowel: 2 s core\nspeech: 5 s, 50% overlap",
+               "loses long-range\nvariation within\nan utterance"),
+              ("Normalise\n$-$23 dBFS (EBU R128)",
+               "loses absolute loudness\n(unusable on an\nuncalibrated phone)")]
+    w, gap = 21, 4.3
+    for i, (top, bottom) in enumerate(stages):
+        x = 2 + i * (w + gap)
+        _box(ax, x, 74, w, 17, top, green, fs=7.6, lw=1.6 if i == 1 else 0.8)
+        _box(ax, x, 45, w, 17, bottom, orange, fs=7.2)
+        _arrow(ax, (x + w / 2, 73.4), (x + w / 2, 62.8))
+        if i < 3:
+            _arrow(ax, (x + w + 0.5, 82.5), (x + w + gap - 0.5, 82.5))
+    w_nv, w_ip, w_md = (win[d]["mean_windows"] for d in ("neurovoz", "ipvs", "mdvr_kcl"))
+    notes = [f"Stage 2 is not class-neutral. On IPVS it retains {keep['ipvs'][1]:.1f}% of a patient "
+             f"recording against {keep['ipvs'][0]:.1f}% of a control; the direction\nreverses on "
+             f"NeuroVoz ({keep['neurovoz'][1]:.1f}% vs {keep['neurovoz'][0]:.1f}%), "
+             "where most speech is short sentences repeated after the examiner.",
+             "Stage 4 is provably inert. Attenuating by 60 dB and renormalising changes F0, HNR, "
+             "jitter and shimmer by 0.00%.",
+             f"Windows per recording differ about {TENS[int(round(w_md / w_nv, -1))]}fold: NeuroVoz {w_nv:.1f}, "
+             f"IPVS {w_ip:.1f}, MDVR-KCL {w_md:.1f}. These are not comparable quantities of material."]
+    for k, t in enumerate(notes):
+        ax.text(2, 33 - k * 11, t, fontsize=7.2, color="#555555", va="top")
+    _save(fig, "fig3_1_preprocessing")
+
+
+def f_pipeline() -> None:
+    """The proposed framework, stage by stage (Figure 4.2)."""
+    fig = plt.figure(figsize=(7.6, 6.8))
+    fig.set_layout_engine(None)
+    ax = fig.add_axes([0, 0, 1, 1]); ax.axis("off")
+    ax.set_xlim(0, 100); ax.set_ylim(7, 101)
+    blue, green, yellow, grey, pink, purple = ("#DCEBFA", "#E2F2E0", "#FFF2B0", "#ECECEC",
+                                               "#F7DADF", "#DCC7EE")
+    X, W, H = 33.5, 37, 7.2
+    rows = [
+        (92, "Voice recording: sustained vowel or connected speech", blue),
+        (80, "Pre-processing: 16 kHz mono, silence trim (vowels) or\nvoice-activity detection "
+             "(speech), 2 s vowel core or 5 s\nspeech windows, $-$23 dBFS", green),
+        (68, "FROZEN ENCODER: XLS-R-300M, layer 11\n315,438,720 weights, never updated", yellow),
+        (57, "Mean + standard-deviation pooling over time\n$\\rightarrow$ 2048 numbers", grey),
+        (46, "Classifier head: 2048 $\\rightarrow$ 256 $\\rightarrow$ 1\n525,313 trained weights "
+             "(0.17%)", pink),
+        (33, "Calibration: temperature, Platt or isotonic, chosen\nby Brier score; Platt ranking "
+             "map for AUROC;\nYouden threshold. Fitted on VALIDATION only", pink),
+        (21, "LOCK: nothing is re-fitted after this line", purple),
+        (10, "Evaluation: scored per PARTICIPANT, not per recording", purple),
+    ]
+    for y, txt, fc in rows:
+        _box(ax, X, y, W, H if "\n" not in txt else H + 1.5 * txt.count("\n") - 1.0, txt, fc,
+             fs=7.3)
+    centers = []
+    for y, txt, _ in rows:
+        h = H if "\n" not in txt else H + 1.5 * txt.count("\n") - 1.0
+        centers.append((y, y + h))
+    for (y0, top0), (y1, top1) in zip(centers[:-1], centers[1:]):
+        _arrow(ax, (X + W / 2, y0 - 0.4), (X + W / 2, top1 + 0.6))
+    # classical branch
+    _box(ax, 1, 55, 29, 10, "CLASSICAL BRANCH:\n42 Praat descriptors: jitter,\nshimmer, HNR, "
+         "F0, formants, MFCCs", green, fs=6.8)
+    _arrow(ax, (X - 0.4, 84.5), (15.5, 65.6), ls="--")
+    _arrow(ax, (15.5, 54.6), (X - 0.4, 50), ls="--")
+    ax.text(15.5, 50.5, "alternative input,\nor combined with\nthe embedding", fontsize=6.6,
+            ha="center", va="top", color="#333333")
+    # side notes
+    notes = [(72, "Why frozen: about 900 patients.\nFine-tuning 315 million weights\nwould fit "
+                  "the training dataset,\nnot the disease."),
+             (59, "Why two branches: jitter is a\n~10 ms period perturbation, finer\nthan the "
+                  "encoder's 20 ms frame."),
+             (24.5, "Why lock: re-choosing the\nthreshold on each external dataset\nwould tune "
+                    "the model on its own\ntest data.")]
+    for y, t in notes:
+        ax.text(73.8, y, t, fontsize=6.6, color="#555555", va="center")
+    _save(fig, "fig4_1_pipeline")
+
+
+def f_split_lock() -> None:
+    """Which quantity is fitted on which partition (Figure 4.3)."""
+    fig = plt.figure(figsize=(7.2, 5.6))
+    fig.set_layout_engine(None)
+    ax = fig.add_axes([0, 0, 1, 1]); ax.axis("off")
+    ax.set_xlim(0, 100); ax.set_ylim(0, 100)
+    blue, green, yellow, grey, pink, purple = ("#DCEBFA", "#E2F2E0", "#FFF2B0", "#ECECEC",
+                                               "#F7DADF", "#DCC7EE")
+    _box(ax, 34, 86, 32, 8, "Training dataset, e.g. mPower:\n12,053 recordings / 4,809 participants",
+         blue, fs=8)
+    _box(ax, 4, 70, 24, 7, "TRAIN\nparticipant-disjoint", green, fs=8)
+    _box(ax, 37, 70, 26, 7, "VALIDATION 15%\nparticipant-disjoint", yellow, fs=8)
+    _box(ax, 72, 70, 24, 7, "TEST: touched once", grey, fs=8)
+    for x in (16, 50, 84):
+        _arrow(ax, (50, 85.6), (x, 77.6), lw=1.0)
+    _box(ax, 4, 59, 24, 6, "head weights", pink, fs=8)
+    for i, t in enumerate(["early-stopping epoch", "calibrator (best Brier)\n+ ranking map",
+                           "operating threshold (Youden)"]):
+        _box(ax, 37, 59 - i * 8.5, 26, 6, t, pink, fs=7.6)
+    _arrow(ax, (16, 69.6), (16, 65.6), lw=1.0)
+    _arrow(ax, (50, 69.6), (50, 65.6), lw=1.0)
+    for i in range(2):
+        _arrow(ax, (50, 58.6 - i * 8.5), (50, 57.1 - i * 8.5 - 0.5), lw=1.0)
+    _box(ax, 4, 27, 92, 7, "LOCK: weights + calibrator + ranking map + threshold frozen before "
+         "any external dataset is opened", purple, fs=8.5)
+    _arrow(ax, (16, 58.6), (16, 34.6), lw=1.0)
+    _arrow(ax, (50, 41.6), (50, 34.6), lw=1.0)
+    ax.text(4, 24, "Not fitted on TRAIN: the head has\nalready seen it and is overconfident "
+                   "there.\nNot fitted on TEST: that would use\nthe answers to set the "
+                   "instrument.", fontsize=6.8, color="#555555", va="top")
+    _box(ax, 24, 3, 52, 9, "Every other dataset (NeuroVoz, IPVS, MDVR-KCL,\nBridge2AI): scored by "
+         "the locked model, never fitted", grey, fs=8)
+    _arrow(ax, (50, 26.6), (50, 12.6), lw=1.0)
+    _save(fig, "fig4_2_split_lock")
 
 
 def main() -> None:
     warnings.simplefilter("ignore")
     f_protocol(); f_depth(); f_labels_vs_age(); f_windowing()
     f_probes(); f_transfer_b(); f_agegap(); f_experiment_map(); f_confound_diagram()
+    f_preprocessing(); f_pipeline(); f_split_lock(); f_score_distributions()
     # f_two_designs() is no longer called: fig4_3_two_designs.pdf is now the author's
     # hand-made version, and regenerating it here would overwrite that.
     n = len(list(OUT.glob("*.pdf")))

@@ -14,6 +14,8 @@ Experiments
   WITHIN  every dataset x task, 5-fold participant-disjoint CV, under each condition
   EXP1    train on mPower vowels (as proposed), test on every task of every other dataset
   EXP2    train on the connected speech of each dataset, test on every other dataset's speech
+  EXP3    the same for the vowel and diadochokinesis, so that tasks are compared with the
+          training source held fixed
   SPEC    Parkinson's disease against other disorders (the only dataset that has them is
           Bridge2AI): direct classifiers, and the PD-vs-control model scoring other groups
 
@@ -21,7 +23,10 @@ Conditions (applied the same way everywhere they are possible)
   uncorrected    data as released
   confident      mPower only: patients with a diagnosis year, controls without
   agematched     training cohort frequency-matched on age in 5-year bins
-  agesexmatched  matched jointly on age and sex (mPower and Bridge2AI record sex)
+  sizematched    mPower only: a random sample of the uncorrected cohort with as many patients
+                 and controls as the age-matched one (age gap kept), a control for cohort size
+  agesexmatched  matched jointly on age and sex (every dataset but MDVR-KCL records sex)
+Bridge2AI PD-vs-control uses US participants only (see pdvoice.data.bridge2ai).
 Test cohorts: as released, age-matched (where age is recorded), age- and sex-matched (where
 sex is recorded).
 
@@ -46,6 +51,8 @@ from pdvoice.calibration import select_best_by_brier
 from pdvoice.cohort import age_match_ids, cap_per_subject, demographic_match_ids
 from pdvoice.config import BRIDGE2AI_DIR, EMBEDDINGS, LOGS, MPOWER_DIR, VAL_FRACTION
 from pdvoice.data import LOADERS
+from pdvoice.data.bridge2ai import confirmed_ids
+from pdvoice.data.common_tasks import common_task_mask
 from pdvoice.data.demographics import attach_age
 from pdvoice.data.splits import assign_folds, train_val_test_indices
 from pdvoice.eval.metrics import calibration_error
@@ -94,7 +101,8 @@ def _bridge2ai(task, groups=("pd", "control")):
     d = np.load(EMBEDDINGS / f"bridge2ai__{MODEL}__{task}__Lall.npz", allow_pickle=True)
     row = {p: i for i, p in enumerate(d["path"].astype(str))}
     X = d["X"][[row[p] for p in df.path], LAYER]
-    return df, X
+    m = common_task_mask(df, "bridge2ai")
+    return df[m].reset_index(drop=True), X[m]
 
 
 def _clinical(ds, task):
@@ -106,7 +114,8 @@ def _clinical(ds, task):
     if "path" in d:
         assert list(d["path"].astype(str)) == df.path.tolist(), f"{ds} {task}: cache order"
     assert len(d["X"]) == len(df)
-    return attach_age(df, ds), d["X"]
+    m = common_task_mask(df, ds)
+    return attach_age(df[m].reset_index(drop=True), ds), d["X"][m]
 
 
 def load(ds, task):
@@ -145,7 +154,19 @@ def train_conditions(ds, df, seed):
         lab = df.label
         out["confident"] = base & (((lab == 1) & df.has_diag_year) | ((lab == 0) & ~df.has_diag_year)).to_numpy()
     if has_age(sub):
-        out["agematched"] = base & df.subject_id.isin(age_match_ids(sub, seed=seed)).to_numpy()
+        am = age_match_ids(sub, seed=seed)
+        out["agematched"] = base & df.subject_id.isin(am).to_numpy()
+        if ds == "mpower":
+            # size control: as many patients and controls as the age-matched cohort, drawn at
+            # random from the uncorrected cohort, so the age gap is kept and only the size
+            # (and the class balance) changes
+            s = sub.drop_duplicates("subject_id")
+            n_pd = int(s[s.subject_id.isin(am)].label.sum())
+            n_hc = int((~s[s.subject_id.isin(am)].label.astype(bool)).sum())
+            rng = np.random.default_rng(seed)
+            pick = set(rng.choice(np.sort(s.subject_id[s.label == 1].to_numpy()), n_pd, replace=False)) | \
+                set(rng.choice(np.sort(s.subject_id[s.label == 0].to_numpy()), n_hc, replace=False))
+            out["sizematched"] = base & df.subject_id.isin(pick).to_numpy()
     if has_sex(sub):
         ok = sub.dropna(subset=["age", "sex"])
         out["agesexmatched"] = base & df.subject_id.isin(
@@ -229,7 +250,7 @@ def within_cv(df, X, seed):
 # ------------------------------------------------------------------------- experiments
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--only", default="within,exp1,exp2,spec")
+    ap.add_argument("--only", default="within,exp1,exp2,exp3,spec")
     ap.add_argument("--seeds", default=",".join(map(str, SEEDS)))
     ap.add_argument("--skip-mpower", action="store_true", help="debug: run without mPower")
     args = ap.parse_args()
@@ -285,6 +306,13 @@ def main() -> None:
     if "exp2" in which:
         sp = [k for k in data if k[1] == "speech"]
         plans.append(("exp2", sp, sp))
+    if "exp3" in which:
+        # the same design as Experiment 2 for the vowel and diadochokinesis, so that the
+        # task can be compared with the training source held fixed (mPower is excluded:
+        # it has vowels only and is Experiment 1's source)
+        for task in ("vowel", "ddk"):
+            ks = [k for k in data if k[1] == task and k[0] != "mpower"]
+            plans.append(("exp3", ks, ks))
     for exp, sources, targets in plans:
         for (src, stask) in sources:
             sdf, SX = data[(src, stask)]
@@ -310,52 +338,60 @@ def main() -> None:
         fams = {}
         for fam, files in FAMILIES.items():
             ids = set()
-            for f in files:
-                ids |= set(pd.read_csv(BRIDGE2AI_DIR / "phenotype" / "diagnosis" / f"{f}.tsv",
-                                       sep="\t", dtype=str).participant_id)
+            for f in files:                         # confirmed (gold-standard) diagnoses only
+                ids |= confirmed_ids(pd.read_csv(
+                    BRIDGE2AI_DIR / "phenotype" / "diagnosis" / f"{f}.tsv", sep="\t", dtype=str))
             fams[fam] = {f"b2ai_{i}" for i in ids}
+        confirmed = set().union(*fams.values())
+        # Country: every Canadian in the PD-vs-control cohort is a patient, and most of the
+        # cognitive-impairment group is Canadian, so every comparison is made within one
+        # country (matched on it, or restricted to it).
         for task in SETS["bridge2ai"]:
-            df, X = _bridge2ai(task, groups=("pd", "control", "other"))
+            df, X = _bridge2ai(task, groups=("pd", "pd_non_us", "control", "other"))
             df = df.copy(); df["age"] = pd.to_numeric(df["age"], errors="coerce")
             X = np.asarray(X, dtype=np.float32)
             pdm, ctl, oth = (df.group == "pd").to_numpy(), (df.group == "control").to_numpy(), \
                 (df.group == "other").to_numpy()
+            pd_ca = (df.group == "pd_non_us").to_numpy()
+            pd_all = pdm | pd_ca
+            us = (df.country == "USA").fillna(False).to_numpy(dtype=bool)
             for seed in SEEDS:
-                # (a) direct classifiers: PD against each disorder family, age-matched
-                for fam, ids in {"all other disorders": set(df.subject_id[oth]), **fams}.items():
-                    sel = pdm | (oth & df.subject_id.isin(ids).to_numpy())
-                    sub = df[sel].assign(label=pdm[sel].astype(int)).reset_index(drop=True)
-                    keep = sub.subject_id.isin(age_match_ids(sub, seed=seed)).to_numpy()
+                # (a) direct classifiers: PD against each disorder family, matched on age and
+                # country
+                for fam, ids in {"all other disorders": confirmed, **fams}.items():
+                    sel = pd_all | (oth & df.subject_id.isin(ids).to_numpy())
+                    sub = df[sel].assign(label=pd_all[sel].astype(int)).reset_index(drop=True)
+                    keep = sub.subject_id.isin(demographic_match_ids(
+                        sub, on=("age", "country"), seed=seed)).to_numpy()
                     sub, Xs = sub[keep].reset_index(drop=True), X[sel][keep]
                     if min(sub[sub.label == 1].subject_id.nunique(),
                            sub[sub.label == 0].subject_id.nunique()) < 10:
                         continue
                     record("spec_direct", "bridge2ai", task, "agematched", seed, fam, task,
                            "agematched", within_cv(sub, Xs, seed))
-                # (b) confusion: PD-vs-control model (age-matched) scores the other groups
+                # (b) confusion: the US PD-vs-control model (age-matched) scores the other
+                # groups and the Canadian patients, none of whom it saw; groups are compared
+                # only within one country
                 pc = df[pdm | ctl].assign(label=pdm[pdm | ctl].astype(int))
                 keep = pc.subject_id.isin(age_match_ids(pc, seed=seed))
                 T = pc[keep.to_numpy()].reset_index(drop=True)
                 XT = X[pdm | ctl][keep.to_numpy()]
                 oof = within_cv(T, XT, seed)                       # PD and controls, out of fold
                 head, cal = fit_locked(XT, T.label.to_numpy(), T.subject_id.to_numpy(), seed)
-                r_o, _ = predict(head, cal, X[oth])
-                go = pd.DataFrame({"s": df.subject_id[oth].to_numpy(), "r": r_o}).groupby("s").r.mean()
+                unseen = oth | pd_ca
+                r_o, _ = predict(head, cal, X[unseen])
+                go = pd.DataFrame({"s": df.subject_id[unseen].to_numpy(), "r": r_o}).groupby("s").r.mean()
+                ca_ids = set(df.subject_id[~us])
                 pdr, hcr = oof.r[oof.y == 1], oof.r[oof.y == 0]
+                pdr_ca = go[go.index.isin(set(df.subject_id[pd_ca]))]
                 res = {"PD vs control": (pdr, hcr)}
-                for fam, ids in {"all other disorders": set(go.index), **fams}.items():
-                    fo = go[go.index.isin(ids)]
-                    if len(fo) < 10:
-                        continue
-                    res[f"PD vs {fam}"] = (pdr, fo)
-                    res[f"{fam} vs control"] = (fo, hcr)
-                # cognitive impairment matched to controls on age directly
-                ci = df[oth & df.subject_id.isin(fams["cognitive impairment"]).to_numpy()]
-                cc = pd.concat([ci.assign(label=1), df[ctl].assign(label=0)])
-                cm = set(age_match_ids(cc, seed=seed))
-                res["cognitive impairment vs control (age-matched to each other)"] = (
-                    go[go.index.isin(cm & set(ci.subject_id))],
-                    hcr[hcr.index.isin(cm)])
+                others = set(df.subject_id[oth])        # never a PD patient on this side
+                for fam, ids in {"all other disorders": confirmed, **fams}.items():
+                    fo = go[go.index.isin(ids & others)]
+                    fo_ca = fo[fo.index.isin(ca_ids)]
+                    # both sides scored by the same locked model; the US patients and
+                    # controls have out-of-fold scores only, so they are not compared here
+                    res[f"PD vs {fam} (Canada)"] = (pdr_ca, fo_ca)
                 for name, (pos, neg) in res.items():
                     if len(pos) < 10 or len(neg) < 10:
                         continue
@@ -368,10 +404,10 @@ def main() -> None:
             print(f"[{(time.time()-t0)/60:5.1f} min] spec {task} done", flush=True)
 
     R = pd.DataFrame(rows)
-    R.to_csv(OUT / f"runs{'' if which == {'within', 'exp1', 'exp2', 'spec'} else '__' + '_'.join(sorted(which))}.csv",
+    R.to_csv(OUT / f"runs{'' if which == {'within', 'exp1', 'exp2', 'exp3', 'spec'} else '__' + '_'.join(sorted(which))}.csv",
              index=False)
     if scores:
-        pd.concat(scores).to_csv(OUT / f"scores{'' if which == {'within', 'exp1', 'exp2', 'spec'} else '__' + '_'.join(sorted(which))}.csv.gz",
+        pd.concat(scores).to_csv(OUT / f"scores{'' if which == {'within', 'exp1', 'exp2', 'exp3', 'spec'} else '__' + '_'.join(sorted(which))}.csv.gz",
                                  index=False)
     print(f"done in {(time.time()-t0)/60:.1f} min; {len(R)} rows", flush=True)
 

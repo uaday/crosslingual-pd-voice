@@ -302,7 +302,7 @@ age-matched (F-32). A gain visible only there is most likely a gain in age detec
 
 | stage | discards | measured cost |
 |---|---|---|
-| VAD | pauses, hesitation, speech rate | **F-31** 🔴 — timing alone is worth IPVS **0.878**, still **0.769** age-matched |
+| VAD | pauses, hesitation, speech rate | **F-31** 🔴 — timing alone is worth IPVS **0.878**, still **0.725** age-matched (5 matching seeds) |
 | 5 s chunks | long-range drift within an utterance | **F-34** — between-chunk variance is 10–13% of within-chunk |
 | 2 s vowel core | **80%** of every 10 s mPower vowel | **F-34** — costs nothing that transfers |
 | normalisation | absolute loudness (hypophonia) | **F-14** — 0.00% change to any used measure |

@@ -153,6 +153,26 @@ def main() -> None:
         out_rows.append(dict(dataset=ds, n=len(s), auroc=round(a, 4),
                              ci=[round(lo, 4), round(hi, 4)], singles=singles))
 
+    # IPVS again on age-matched speakers (five matching seeds), since its young controls
+    # pause differently for reasons other than the disease
+    from pdvoice.cohort import age_match_ids
+    from pdvoice.data.demographics import attach_age
+    ip = attach_age(S[S.dataset == "ipvs"].copy(), "ipvs")
+    matched = []
+    for seed in range(42, 47):
+        s = ip[ip.subject_id.isin(age_match_ids(ip.dropna(subset=["age"]), seed=seed))]
+        y, X, groups = s.label.to_numpy(), s[FEATURES].to_numpy(), s.subject_id.to_numpy()
+        oof = np.zeros(len(y))
+        for tr, te in StratifiedGroupKFold(5, shuffle=True,
+                                           random_state=SEED).split(X, y, groups):
+            clf = make_pipeline(StandardScaler(), LogisticRegression(max_iter=2000))
+            oof[te] = clf.fit(X[tr], y[tr]).predict_proba(X[te])[:, 1]
+        matched.append(auroc(y, oof))
+    ipvs_matched = {"auroc_mean": round(float(np.mean(matched)), 4),
+                    "per_seed": [round(float(a), 4) for a in matched],
+                    "pairs": int(len(s) // 2)}
+    print(f"\n  ipvs, age-matched (5 seeds): AUROC {np.mean(matched):.3f}")
+
     print(f"\n{'=' * 84}\nREADING\n{'=' * 84}")
     print("  These numbers come ONLY from when the speaker was and was not talking.")
     print("  No pitch, no formants, no spectrum -- just timing.")
@@ -166,6 +186,7 @@ def main() -> None:
     (LOGS / "pause_information.json").write_text(json.dumps({
         "features": FEATURES, "n_recordings": int(len(R)), "n_speakers": int(len(S)),
         "results": out_rows,
+        "ipvs_agematched": ipvs_matched,
         "per_group": {ds: S[S.dataset == ds].groupby("label")[FEATURES].mean()
                       .round(3).to_dict() for ds in CORPORA},
     }, indent=2, default=str))

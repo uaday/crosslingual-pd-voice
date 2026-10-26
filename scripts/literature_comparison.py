@@ -25,7 +25,8 @@ import pandas as pd
 from pdvoice.config import LOGS
 
 REFERENCES = Path(__file__).resolve().parents[1] / "references" / "published_results.csv"
-MODEL, LAYER = "xls-r-300m", 15
+MODEL, LAYER = "xls-r-300m", 11
+RUNS = LOGS / "unified" / "runs.csv"
 
 
 def _load(name: str) -> dict:
@@ -42,23 +43,33 @@ def resolve(key: str) -> tuple[float | None, str]:
     same corpus can appear as a training set and as a transfer target with very different
     numbers, and conflating those is the easiest way to build a flattering comparison.
     """
+    # Our side is the five-seed, layer-11 protocol of every headline figure
+    # (scripts/unified_experiments.py), uncorrected cohorts and test sets as released,
+    # because the published figures apply no demographic control either.
     parts = key.split(":")
+    R = pd.read_csv(RUNS)
+    src = f"unified/runs.csv (layer {LAYER}, 5 seeds)"
+
+    def mean(**k):
+        m = np.ones(len(R), bool)
+        for a, b in k.items():
+            m &= (R[a] == b).to_numpy()
+        if not m.any():
+            raise KeyError(f"no runs for {k}")
+        return float(R[m].auroc.mean())
 
     if parts[0] == "transferany":
-        run = parts[1]                      # e.g. train-neurovoz-speech
-        f = f"transferany__{MODEL}__{run}__L{LAYER}.json"
-        d = _load(f)
+        _, ds, task = parts[1].split("-")          # e.g. train-neurovoz-speech
         if parts[2] == "within":
-            return float(d["within"]["auroc"]), f
-        target = ":".join(parts[3:])        # e.g. ipvs:speech
-        return float(d["transfer"][target]["auroc"]), f
+            return mean(exp="within", source=ds, source_task=task, condition="uncorrected"), src
+        tgt, ttask = parts[3], parts[4]
+        exp = "exp2" if task == "speech" else "exp3"
+        return mean(exp=exp, source=ds, target=tgt, target_task=ttask,
+                    condition="uncorrected", target_cohort="released"), src
 
     if parts[0] == "labelsens":
-        f = "label_sensitivity.json"
-        d = _load(f)
-        runs = d["runs"][parts[1]]
-        v = np.array([r["within"] for r in runs], float)
-        return float(v.mean()), f
+        return mean(exp="within", source="mpower", source_task="vowel",
+                    condition="uncorrected"), src
 
     raise KeyError(f"unrecognised key: {key}")
 

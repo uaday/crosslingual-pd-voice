@@ -5,7 +5,7 @@ Sex became a validity item rather than a nicety once two facts landed together:
     the embeddings encode sex at AUROC 0.971   (embedding_probes.py)
     mPower patients are 34.6% female against 18.6% of controls
 
-and age matching does NOT fix it -- it only narrows the gap to 33.7% vs 22.7%
+and age matching does NOT fix it -- it only narrows the gap to 33.4% vs 22.3%
 (chi-square p = 5.6e-05). Sex alone predicts the label at 0.58. So a model trained on
 these embeddings has a second demographic shortcut available, independent of age, and
 nothing in this project has ever controlled it.
