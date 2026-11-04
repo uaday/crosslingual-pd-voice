@@ -220,6 +220,39 @@ _E2 = R[(R.exp == "exp2") & (R.condition == "uncorrected") & (R.target_cohort ==
         & (R.source != "ipvs")].groupby(["source", "target"]).auroc.mean()
 dev2 = [_W2[s_] - v_ for (s_, _), v_ in _E2.items()]
 
+
+# ---- background-noise robustness check (Section sec:noise)
+RB = pd.read_csv(LOGS / "unified_clean" / "runs.csv")       # Bridge2AI denoised
+RA = pd.read_csv(LOGS / "unified_clean_all" / "runs.csv")   # every clinical set denoised
+
+
+def _n(df, **k):
+    m = np.ones(len(df), bool)
+    for a, b in k.items():
+        m &= (df[a] == b).to_numpy()
+    return df[m].set_index("seed").auroc
+
+
+def NZ(df, **k):
+    return _n(df, **k).mean()
+
+
+def lower5(**k):  # seeds in which the all-cleaned result is below the original
+    return int(((_n(RA, **k) - _n(R, **k)).dropna() < 0).sum())
+
+
+nw = lambda df, ds, t: NZ(df, exp="within", source=ds, source_task=t, condition="agematched")  # noqa: E731
+ne2 = lambda df, s, t: NZ(df, exp="exp2", source=s, target=t, condition="agematched", target_cohort="agematched")  # noqa: E731
+ne1 = lambda df, coh: NZ(df, exp="exp1", source="mpower", condition="uncorrected", target="bridge2ai", target_task="vowel", target_cohort=coh)  # noqa: E731
+nsp = lambda df, g: NZ(df, exp="spec_direct", target=g, source_task="speech")  # noqa: E731
+ncf = lambda df, g: NZ(df, exp="spec_confusion", target=g, source_task="speech")  # noqa: E731
+na = j("bridge2ai_noise_audit.json")
+nsum = lambda g, k: sum(v[k] for key, v in na.items() if key.startswith(g + "|"))  # noqa: E731
+dl = j("denoise_listening_check.json")["hum"]
+th = lambda n: f"{n:,}".replace(",", "{,}")  # noqa: E731  LaTeX thousands separator
+ipvs_v = dict(exp="within", source="ipvs", source_task="vowel", condition="agematched")
+b2ne = dict(exp="exp2", source="bridge2ai", target="neurovoz", condition="agematched", target_cohort="agematched")
+
 CHECKS = [
     # ---- abstract
     ("Main.tex", f"AUROC of {f3(w_unc)} within mPower\nand {f3(mt_unc)} on the clinical datasets"),
@@ -440,10 +473,29 @@ CHECKS = [
     ("ch5_conclusion.tex", f"(vowels {f3(E1('ipvs', 'vowel', 'uncorrected'))} to {f3(E1('ipvs', 'vowel', 'agematched'))}, still below 0.5 in four of five seeds)"),
     ("ch5_conclusion.tex", f"{f3(w_am)} against {f3(a_am)} for age alone"),
     ("ch5_conclusion.tex", f"The {f3(w_unc)} obtained"),
+    # ---- background noise
+    ("ch3_existing_models.tex", f"used here, mains hum at least 5~dB above the neighbouring spectrum appears in {nsum('pd', 'buzz60_ge_5')} of {nsum('pd', 'recordings')} patient recordings and {nsum('control', 'buzz60_ge_5')} of {th(nsum('control', 'recordings'))} control recordings, and {nsum('pd', 'silent_rms_lt_-55')} and {nsum('control', 'silent_rms_lt_-55')} recordings are"),
+    ("ch3_existing_models.tex", f"by {-dl['pause_noise_db_max']:.1f} to {-dl['pause_noise_db_min']:.1f}~dB and changes loud speech by a median of {-dl['loud_speech_db_median']:.2f}~dB, at most {-dl['loud_speech_db_worst']:.1f}~dB"),
+    ("ch3_existing_models.tex", f"result from {f3(W('ipvs', 'vowel', 'agematched'))} to {f3(nw(RA, 'ipvs', 'vowel'))}, lower in all five seeds, while connected speech stays at {f3(nw(RA, 'ipvs', 'speech'))}"),
+    ("ch4_proposed_framework.tex", f"age-matched connected speech moves from {f3(nw(R, 'bridge2ai', 'speech'))} to {f3(nw(RA, 'bridge2ai', 'speech'))}, diadochokinesis from {f3(nw(R, 'bridge2ai', 'ddk'))} to {f3(nw(RA, 'bridge2ai', 'ddk'))} and the vowel from {f3(nw(R, 'bridge2ai', 'vowel'))} to {f3(nw(RA, 'bridge2ai', 'vowel'))}"),
+    ("ch4_proposed_framework.tex", f"still scores {f3(ne1(RA, 'released'))} on Bridge2AI as released and {f3(ne1(RA, 'agematched'))} once age is matched"),
+    ("ch4_proposed_framework.tex", f"from voice disorders at {f3(nsp(RA, 'voice disorders'))} and from cognitive impairment at {f3(nsp(RA, 'cognitive impairment'))}"),
+    ("ch4_proposed_framework.tex", f"participants with cognitive impairment at {f3(ncf(RA, 'PD vs cognitive impairment (Canada)'))}"),
+    ("ch4_proposed_framework.tex", f"vowel result falls from {f3(W('ipvs', 'vowel', 'agematched'))} to {f3(nw(RA, 'ipvs', 'vowel'))}, lower in all five seeds, while its connected speech stays at {f3(nw(RA, 'ipvs', 'speech'))}"),
+    ("ch4_proposed_framework.tex", f"age-matched IPVS from {f3(ne2(R, 'bridge2ai', 'ipvs'))} to {f3(ne2(RB, 'bridge2ai', 'ipvs'))}"),
+    ("ch4_proposed_framework.tex", f"it recovers to {f3(ne2(RA, 'bridge2ai', 'ipvs'))}"),
+    ("ch4_proposed_framework.tex", f"MDVR-KCL ({f3(E2('mdvr_kcl', 'ipvs', 'uncorrected'))} to {f3(NZ(RA, exp='exp2', source='mdvr_kcl', target='ipvs', condition='uncorrected', target_cohort='released'))}) and from NeuroVoz ({f3(ne2(R, 'neurovoz', 'ipvs'))} to {f3(ne2(RA, 'neurovoz', 'ipvs'))})"),
+    ("ch4_proposed_framework.tex", f"from {f3(ne2(R, 'bridge2ai', 'neurovoz'))} to {f3(ne2(RA, 'bridge2ai', 'neurovoz'))}, lower in all five seeds; it and NeuroVoz to Bridge2AI ({f3(ne2(RA, 'neurovoz', 'bridge2ai'))})"),
+    ("ch5_conclusion.tex", f"lowers the IPVS vowel result from {f3(W('ipvs', 'vowel', 'agematched'))} to {f3(nw(RA, 'ipvs', 'vowel'))}"),
 ]
 
 # logical claims stated in words
 LOGIC = [
+    ("noise: IPVS vowel lower in all five seeds", lower5(**ipvs_v) == 5),
+    ("noise: Bridge2AI to NeuroVoz lower in all five seeds", lower5(**b2ne) == 5),
+    ("noise: no age-matched speech transfer moves by more than 0.07",
+     max(abs(ne2(RA, a, b) - ne2(R, a, b)) for a, b in [("bridge2ai", "ipvs"), ("bridge2ai", "neurovoz"),
+         ("ipvs", "bridge2ai"), ("ipvs", "neurovoz"), ("neurovoz", "bridge2ai"), ("neurovoz", "ipvs")]) <= 0.07),
     ("vowel age-matched seeds below 0.5: four of five",
      sum(R[(R.exp == "exp1") & (R.condition == "agematched") & (R.target == "ipvs")
            & (R.target_task == "vowel") & (R.target_cohort == "released")].auroc < 0.5) == 4),

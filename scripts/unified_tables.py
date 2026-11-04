@@ -351,7 +351,65 @@ def t_master(R):
           "trained on as released.")
 
 
+def t_noise():
+    """Key results before and after background-noise removal (scripts/extract_bridge2ai_clean.py)."""
+    key = ["exp", "source", "source_task", "condition", "target", "target_task", "target_cohort"]
+    runs = {k: pd.read_csv(LOGS / d / "runs.csv") for k, d in
+            [("orig", "unified"), ("b2", "unified_clean"), ("all", "unified_clean_all")]}
+
+    def cells(**kv):
+        out = []
+        for k in ["orig", "b2", "all"]:
+            r = runs[k]
+            m = np.ones(len(r), bool)
+            for c, v in kv.items():
+                m &= (r[c] == v).to_numpy()
+            out.append(r[m].set_index("seed").auroc)
+        d = (out[2] - out[0]).dropna()
+        return [f"{s.mean():.3f}" for s in out] + [f"{int((d < 0).sum())}/{len(d)}"]
+
+    def within(ds, task, coh="agematched"):
+        return cells(exp="within", source=ds, source_task=task, condition=coh,
+                     target_cohort=coh)
+
+    def exp2(src, tgt, coh="agematched"):
+        return cells(exp="exp2", source=src, target=tgt, condition=coh, target_cohort=coh)
+
+    rows = ["\\multicolumn{5}{l}{\\emph{(a) Within each dataset, age-matched}} \\\\"]
+    for ds, task in [("bridge2ai", "speech"), ("bridge2ai", "ddk"), ("bridge2ai", "vowel"),
+                     ("neurovoz", "speech"), ("neurovoz", "ddk"), ("neurovoz", "vowel"),
+                     ("ipvs", "speech"), ("ipvs", "vowel")]:
+        rows.append([f"{NAME[ds]} {TASK[task]}"] + within(ds, task))
+    rows.append(["MDVR-KCL speech, as released"] + within("mdvr_kcl", "speech", "uncorrected"))
+    rows.append("\\midrule\\multicolumn{5}{l}{\\emph{(b) Experiment 1, mPower vowel model "
+                "(not cleaned) on Bridge2AI vowels}} \\\\")
+    for coh, lab in [("released", "as released"), ("agematched", "age-matched")]:
+        rows.append([f"mPower $\\rightarrow$ Bridge2AI, {lab}"] + cells(
+            exp="exp1", source="mpower", condition="uncorrected", target="bridge2ai",
+            target_task="vowel", target_cohort=coh))
+    rows.append("\\midrule\\multicolumn{5}{l}{\\emph{(c) Experiment 2, connected speech, "
+                "trained and tested age-matched}} \\\\")
+    for s, t in [("bridge2ai", "ipvs"), ("bridge2ai", "neurovoz"), ("neurovoz", "bridge2ai"),
+                 ("ipvs", "bridge2ai"), ("neurovoz", "ipvs")]:
+        rows.append([f"{NAME[s]} $\\rightarrow$ {NAME[t]}"] + exp2(s, t))
+    for s, t in [("bridge2ai", "mdvr_kcl"), ("mdvr_kcl", "bridge2ai"), ("mdvr_kcl", "ipvs")]:
+        c = "agematched" if s == "bridge2ai" else "uncorrected"
+        rows.append([f"{NAME[s]} $\\rightarrow$ {NAME[t]}, released target"] + cells(
+            exp="exp2", source=s, target=t, condition=c, target_cohort="released"))
+    write("u_noise", tab(["\\textbf{Result}", "\\textbf{Original}", "\\textbf{Bridge2AI cleaned}",
+                          "\\textbf{All cleaned}", "\\textbf{Lower}"], rows, "lcccc",
+                         size="\\scriptsize", sep="3pt"),
+          "Key results before and after background noise is removed by spectral gating.",
+          "tab:u-noise",
+          "Participant-level AUROC, mean over five seeds; layer 11. Bridge2AI cleaned: only "
+          "Bridge2AI audio is denoised. All cleaned: Bridge2AI, IPVS, NeuroVoz and MDVR-KCL are "
+          "denoised; mPower is not. Silent recordings (below $-55$~dBFS) are dropped. Lower: "
+          "seeds in which the all-cleaned result is below the original. MDVR-KCL records no "
+          "age, so models trained on it use every participant.")
+
+
 def main():
+    t_noise()
     R, S = load()
     t_within(R, S)
     t_spec(R)
