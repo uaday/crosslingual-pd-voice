@@ -34,9 +34,10 @@ def spectral_gate(wav: np.ndarray, n_fft: int = 1024, hop: int = 256, k: float =
     (64 ms) keep the filter from ringing: an earlier whole-file comb notch at multiples of
     60 Hz smeared speech into the pauses and left the broadband noise untouched. The mask is
     smoothed over 3 bins x 5 frames to avoid "musical noise", and the cut is capped at 18 dB
-    so a recording with little noise is left nearly unchanged. On the noisiest Bridge2AI
-    recordings it lowers pause noise by 10-18 dB while loud speech changes by under 0.2 dB
-    (up to 3 dB where noise is nearly as loud as the voice). Applied to every recording alike.
+    so a recording with little noise is left nearly unchanged. On the ten Bridge2AI
+    recordings with the strongest hum it lowers pause noise by 10.5-17.9 dB while loud speech
+    changes by a median of 0.26 dB (up to 3.1 dB where noise is nearly as loud as the voice;
+    scripts/denoise_listening_check.py). Applied to every recording alike.
     """
     import librosa
     from scipy.ndimage import uniform_filter
