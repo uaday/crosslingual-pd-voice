@@ -38,6 +38,7 @@ Run:  .venv\\Scripts\\python.exe -u scripts\\unified_experiments.py
 from __future__ import annotations
 
 import argparse
+import os
 import time
 import warnings
 
@@ -61,7 +62,14 @@ from pdvoice.preprocess import quality_control
 
 MODEL, LAYER, CAP = "xls-r-300m", 11, 3
 SEEDS = [42, 43, 44, 45, 46]
-OUT = LOGS / "unified"
+# PDVOICE_B2AI_CLEAN=1 reruns everything on Bridge2AI audio with background noise removed (spectral gating) and
+# silent recordings dropped (scripts/bridge2ai_noise_audit.py), into outputs/logs/unified_clean/
+# PDVOICE_CLEAN_ALL=1 also cleans IPVS, NeuroVoz and MDVR-KCL the same way (mPower is not
+# cleaned), into outputs/logs/unified_clean_all/, so transfer compares clean with clean.
+CLEAN_ALL = os.environ.get("PDVOICE_CLEAN_ALL") == "1"
+CLEAN = CLEAN_ALL or os.environ.get("PDVOICE_B2AI_CLEAN") == "1"
+SILENT_DBFS = -55.0
+OUT = LOGS / ("unified_clean_all" if CLEAN_ALL else "unified_clean" if CLEAN else "unified")
 SETS = {"mpower": ["vowel"], "ipvs": ["vowel", "speech"], "neurovoz": ["vowel", "ddk", "speech"],
         "mdvr_kcl": ["speech"], "bridge2ai": ["vowel", "ddk", "speech"]}
 FAMILIES = {
@@ -98,8 +106,12 @@ def _bridge2ai(task, groups=("pd", "control")):
     df = base[base.task_kind == task].copy()
     df, _ = quality_control(df)
     df = df[df.group.isin(groups)].reset_index(drop=True)
-    d = np.load(EMBEDDINGS / f"bridge2ai__{MODEL}__{task}__Lall.npz", allow_pickle=True)
+    d = np.load(EMBEDDINGS / f"bridge2ai{'_clean' if CLEAN else ''}__{MODEL}__{task}__Lall.npz",
+                allow_pickle=True)
     row = {p: i for i, p in enumerate(d["path"].astype(str))}
+    if CLEAN:  # background noise removed (scripts/extract_bridge2ai_clean.py); silent recordings dropped
+        loud = {p for p, r in zip(d["path"].astype(str), d["rms_db"]) if r >= SILENT_DBFS}
+        df = df[df.path.isin(loud)].reset_index(drop=True)
     X = d["X"][[row[p] for p in df.path], LAYER]
     m = common_task_mask(df, "bridge2ai")
     return df[m].reset_index(drop=True), X[m]
@@ -110,12 +122,19 @@ def _clinical(ds, task):
     df = df[df.task_kind == task].copy()
     df, _ = quality_control(df)
     df = df.reset_index(drop=True)
-    d = np.load(EMBEDDINGS / f"{ds}__{MODEL}__{task}__L{LAYER}.npz", allow_pickle=True)
-    if "path" in d:
+    if CLEAN_ALL:  # background noise removed (scripts/extract_bridge2ai_clean.py); silent dropped
+        d = np.load(EMBEDDINGS / f"{ds}_clean__{MODEL}__{task}__Lall.npz", allow_pickle=True)
         assert list(d["path"].astype(str)) == df.path.tolist(), f"{ds} {task}: cache order"
-    assert len(d["X"]) == len(df)
+        loud = d["rms_db"] >= SILENT_DBFS
+        df, X = df[loud].reset_index(drop=True), d["X"][loud, LAYER]
+    else:
+        d = np.load(EMBEDDINGS / f"{ds}__{MODEL}__{task}__L{LAYER}.npz", allow_pickle=True)
+        if "path" in d:
+            assert list(d["path"].astype(str)) == df.path.tolist(), f"{ds} {task}: cache order"
+        X = d["X"]
+    assert len(X) == len(df)
     m = common_task_mask(df, ds)
-    return attach_age(df[m].reset_index(drop=True), ds), d["X"][m]
+    return attach_age(df[m].reset_index(drop=True), ds), X[m]
 
 
 def load(ds, task):
