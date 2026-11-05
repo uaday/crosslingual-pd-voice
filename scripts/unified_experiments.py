@@ -70,6 +70,11 @@ CLEAN_ALL = os.environ.get("PDVOICE_CLEAN_ALL") == "1"
 CLEAN = CLEAN_ALL or os.environ.get("PDVOICE_B2AI_CLEAN") == "1"
 SILENT_DBFS = -55.0
 OUT = LOGS / ("unified_clean_all" if CLEAN_ALL else "unified_clean" if CLEAN else "unified")
+# PDVOICE_B2AI_SPEECH=rainbow-passage,picture-description keeps only those Bridge2AI speech
+# tasks (task-ablation of the connected-speech model), into outputs/logs/unified_speech_<tasks>/
+SPEECH_TASKS = [t for t in os.environ.get("PDVOICE_B2AI_SPEECH", "").split(",") if t]
+if SPEECH_TASKS:
+    OUT = LOGS / ("unified_speech_" + "+".join(t.split("-")[0] for t in SPEECH_TASKS))
 SETS = {"mpower": ["vowel"], "ipvs": ["vowel", "speech"], "neurovoz": ["vowel", "ddk", "speech"],
         "mdvr_kcl": ["speech"], "bridge2ai": ["vowel", "ddk", "speech"]}
 FAMILIES = {
@@ -114,6 +119,8 @@ def _bridge2ai(task, groups=("pd", "control")):
         df = df[df.path.isin(loud)].reset_index(drop=True)
     X = d["X"][[row[p] for p in df.path], LAYER]
     m = common_task_mask(df, "bridge2ai")
+    if task == "speech" and SPEECH_TASKS:
+        m &= df.task_code.isin(SPEECH_TASKS).to_numpy()
     return df[m].reset_index(drop=True), X[m]
 
 
