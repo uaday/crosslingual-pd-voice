@@ -1,4 +1,4 @@
-"""Probability calibration — fit on val, LOCK before test (PROJECT_CONTEXT.md §4.3).
+"""Probability calibration — fit on val, LOCK before test.
 
 Three candidate maps (temperature / Platt / isotonic); pick the best by validation
 Brier, then freeze it and apply unchanged to the test fold and to each external set.

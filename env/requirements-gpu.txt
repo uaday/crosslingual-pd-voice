@@ -1,0 +1,50 @@
+# Runtime dependencies for the pdvoice pipeline (pip / venv path — GPU box, no conda).
+# torch + torchaudio are installed SEPARATELY from the CUDA index:
+#   pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu121
+# then:  pip install -r env/requirements-gpu.txt  &&  pip install -e .
+
+# --- core numerics / data ---
+numpy<2.0
+pandas
+scipy
+scikit-learn
+pyyaml
+joblib
+tqdm
+
+# --- audio I/O + DSP ---
+librosa
+soundfile
+audioread
+
+# --- classical voice features (jitter/shimmer/HNR/VOT) ---
+praat-parselmouth
+
+# --- voice activity detection ---
+silero-vad
+
+# --- SSL encoders ---
+# Pin to 4.x: transformers 5.x refuses to load torch.load/.bin weights unless
+# torch>=2.6 (CVE-2025-32434 guard), but the box is locked to torch 2.5.1+cu121
+# (CUDA 12.2 driver can't run cu124 wheels) and all shortlisted encoders ship
+# .bin only (no safetensors). 4.46.3 loads them fine.
+transformers==4.46.3
+
+# --- re-implementation of Rahmatallah et al. 2025 (scripts/rahmatallah_cnn.py) ---
+# Keras 3 on the torch backend gives their InceptionV3 + ImageNet weights without
+# TensorFlow. ml-dtypes must stay <0.5 or pip pulls numpy 2.x and breaks numpy<2.0.
+keras>=3.6
+ml-dtypes<0.5
+
+# --- calibration / stats / plots ---
+statsmodels
+matplotlib
+
+# --- notebooks + tests ---
+ipykernel
+jupyter
+pytest
+
+# --- Bridge2AI-Voice download (scripts/download_bridge2ai.py) ---
+# token goes in ~/.synapseConfig, never in the repo
+synapseclient

@@ -78,6 +78,9 @@ from pdvoice.config import LOGS, MPOWER_DIR
 
 ROOT = Path(__file__).resolve().parents[1]
 TABLE_S1 = ROOT / "references" / "rahmatallah2025_tableS1.csv"
+# Table S1 of Rahmatallah et al. (2025) lists the mPower recordIds and healthCodes they
+# used. It is not redistributed here (it carries participant identifiers): download it from
+# the paper's supplementary material and save it at references/rahmatallah2025_tableS1.csv.
 WORK = ROOT / "outputs" / "rahmatallah_cnn"
 IMG_DIR = WORK / "mel"
 FEATS = WORK / "inceptionv3_features.npz"

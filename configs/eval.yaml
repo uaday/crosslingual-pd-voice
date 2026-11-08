@@ -1,4 +1,4 @@
-# Evaluation configuration (PROJECT_CONTEXT.md §4.3, §4.4).
+# Evaluation configuration.
 operating_point: youden_j        # threshold selected on the validation fold
 target_specificity: 0.90         # also report sensitivity at this specificity
 

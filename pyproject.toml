@@ -9,7 +9,7 @@ description = "Voice-based Parkinson's disease detection with cross-dataset and 
 authors = [{ name = "Sudipta Ghosh" }]
 requires-python = ">=3.10"
 readme = "README.md"
-# Heavy deps (torch, transformers, librosa, ...) come from env/environment.yml.
+# Heavy deps (torch, transformers, librosa, ...) come from env/requirements-gpu.txt.
 # These are the light ones needed for the package to import and be tested.
 dependencies = [
     "numpy<2.0",

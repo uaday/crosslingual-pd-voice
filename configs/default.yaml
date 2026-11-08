@@ -1,5 +1,5 @@
 # Default run configuration. The pipeline is dataset-agnostic — swap train_dataset
-# to flip mPower <-> Bridge2AI without code changes (PROJECT_CONTEXT.md §3.4).
+# to flip mPower <-> Bridge2AI without code changes.
 seed: 42
 sample_rate: 16000
 n_folds: 5

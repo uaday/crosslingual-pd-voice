@@ -3,7 +3,7 @@
 Extracts jitter / shimmer / HNR / F0 + 13 MFCCs (Praat via parselmouth) on the SAME
 mPower vowel cohort used for the SSL runs, trains SVM + Random Forest with
 subject-disjoint 5-fold CV, and reports subject-level AUROC — head-to-head with the
-frozen-XLS-R numbers. Classical features are vowel-specific (PROJECT_CONTEXT §3.2).
+frozen-XLS-R numbers. Classical features are vowel-specific.
 
 Speed: features are computed on the 2 s stable vowel core (same segment the SSL path
 uses), which makes Praat ~5x faster than on the full 10 s file. Cached to parquet.

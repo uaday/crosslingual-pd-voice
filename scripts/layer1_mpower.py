@@ -1,6 +1,6 @@
 """Layer 1 (RQ1) — within-dataset mPower baseline, capped pilot.
 
-Pipeline (PROJECT_CONTEXT.md §4.5, Layer 1):
+Pipeline (Layer 1):
     load mPower + labels -> cap recordings/subject -> QC -> 5-fold subject-disjoint
     CV -> frozen SSL embedding (cached) -> MLP head -> calibrate on val (LOCK) ->
     out-of-fold predictions -> aggregate to SUBJECT level -> AUROC/AUPRC (+95% CI),

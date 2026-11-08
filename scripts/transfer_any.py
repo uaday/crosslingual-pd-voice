@@ -1,6 +1,6 @@
 """Generalised cross-dataset transfer: train on ANY dataset+task, test on others.
 
-Dataset-agnostic version of layer2_transfer.py (PROJECT_CONTEXT.md §3.4). Trains the
+Dataset-agnostic version of layer2_transfer.py. Trains the
 frozen-XLS-R + head on a chosen source (subject-disjoint train/val, locked calibration),
 reports the within-source 5-fold ceiling, then applies the locked model to a list of
 target (dataset:task) pairs. Embeddings are cached per (dataset, task, layer); mPower

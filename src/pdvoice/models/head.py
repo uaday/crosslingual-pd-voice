@@ -1,4 +1,4 @@
-"""The shallow classifier head (PROJECT_CONTEXT.md §4.2).
+"""The shallow classifier head.
 
 One hidden layer of 256 units (ReLU + batch-norm + dropout) -> single logit.
 Deliberately shallow to avoid overfitting mPower's noisy self-report labels, and

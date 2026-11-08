@@ -204,7 +204,7 @@ def main() -> None:
     print("     sustained-vowel PD signal sits in low-level acoustics rather than in the")
     print("     high-level representation the final layer holds.")
     print("\n  Learned weighting needs no layer to be selected, so it removes the test-set")
-    print("  selection that produced L15 (RESEARCH_PLAN V2) -- but at this sample size it")
+    print("  selection that produced L15 -- but at this sample size it")
     print("  does not beat simply picking the best single layer.")
 
     (LOGS / "encoder_layer_sweep.json").write_text(json.dumps(

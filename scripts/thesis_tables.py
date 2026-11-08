@@ -6,7 +6,7 @@ happens because a figure or table is made once and the numbers move underneath i
 table is therefore regenerated from `outputs/logs/` on demand, and the thesis inputs
 the result rather than containing numbers of its own.
 
-Output: thesis/tables/*.tex, one file per table, booktabs only (the Unitec template loads
+Output: outputs/tables/*.tex, one file per table, booktabs only (the Unitec template loads
 booktabs and both sample theses use it with no vertical rules).
 
 Run:  .venv\\Scripts\\python.exe scripts\\thesis_tables.py
@@ -24,7 +24,7 @@ import pandas as pd
 
 from pdvoice.config import LOGS
 
-OUT = Path(__file__).resolve().parents[1] / "thesis" / "tables"
+OUT = Path(__file__).resolve().parents[1] / "outputs" / "tables"
 
 
 def _w(name: str, body: str, caption: str, label: str, note: str = "") -> None:
