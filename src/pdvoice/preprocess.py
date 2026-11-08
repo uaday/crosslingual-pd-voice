@@ -1,6 +1,6 @@
 """Raw audio -> analysis-ready clips + quality-controlled manifest.
 
-Pipeline (PROJECT_CONTEXT.md §4.1): resample 16 kHz mono -> VAD -> QC.
+Pipeline: resample 16 kHz mono -> VAD -> QC.
 Sustained vowels take a stable central core; connected speech is chunked and the
 per-chunk embeddings are averaged downstream (see features/ssl.py).
 """

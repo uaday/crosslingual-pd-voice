@@ -1,4 +1,4 @@
-# Encoder configuration for the three-layer validation matrix (PROJECT_CONTEXT.md §4.5).
+# Encoder configuration for the three-layer validation matrix.
 # Default mode is FROZEN embeddings (cached) — fits the 5 GB vGPU and matches the field.
 
 mode: frozen            # frozen (default) | finetune (wav2vec2-base only) | lora

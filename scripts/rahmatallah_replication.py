@@ -49,6 +49,9 @@ from pdvoice.eval.discrimination import bootstrap_ci
 
 MODEL, LAYER = "xls-r-300m", 15
 TABLE_S1 = Path(__file__).resolve().parents[1] / "references" / "rahmatallah2025_tableS1.csv"
+# Table S1 of Rahmatallah et al. (2025) lists the mPower recordIds and healthCodes they
+# used. It is not redistributed here (it carries participant identifiers): download it from
+# the paper's supplementary material and save it at references/rahmatallah2025_tableS1.csv.
 N_SPLITS_THEIRS = 100
 MATCH_SEEDS = range(10)
 

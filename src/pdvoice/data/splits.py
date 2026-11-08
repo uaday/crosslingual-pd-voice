@@ -1,6 +1,6 @@
 """Subject-disjoint cross-validation splits.
 
-The cardinal rule (PROJECT_CONTEXT.md §10): no participant may appear in more than
+The cardinal rule: no participant may appear in more than
 one fold. We group by ``subject_id`` and stratify by ``label`` so class balance is
 preserved across folds. A validation slice is carved from each training set the same
 way, so calibration maps can be fit on val and locked before the test fold is touched.

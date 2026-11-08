@@ -1,12 +1,10 @@
 # Reproducing the thesis results
 
 This file lists, for every result in the thesis, the script that produces it, how to run it,
-and where its output is written. Every table and data figure in `thesis/` is generated from
-those outputs by `scripts/thesis_tables.py` and `scripts/thesis_figures.py`; no number in a
-table is typed by hand.
-
-Code: https://github.com/uaday/pd-research (private repository; access on request to the
-author or to Dr Hamid Sharifzadeh, Unitec). Branch `data-audit-and-drivers`.
+and where its output is written. Every table and data figure in the thesis is generated from
+those outputs by `scripts/unified_tables.py`, `scripts/thesis_tables.py` and
+`scripts/thesis_figures.py` (written to `outputs/tables/` and `outputs/figures/`); no number
+in a table is typed by hand.
 
 ## 1. Environment
 
@@ -54,7 +52,7 @@ The data are not in this repository. Each dataset goes in its own folder under
 | NeuroVoz | `pd-datasets/neurovoz_v3/` | Public release (Mendes-Laureano et al., Scientific Data 2024) |
 | IPVS | `pd-datasets/Italian Parkinson's Voice and speech/` | Public release (Dimauro et al., IEEE Access 2017) |
 | MDVR-KCL | `pd-datasets/26-29_09_2017_KCL/` | Zenodo, doi:10.5281/zenodo.2867215 |
-| Bridge2AI-Voice (adult) | `pd-datasets/bridge2ai/` | Controlled access only: application and Data Transfer and Use Agreement through the consortium's Data Access Compliance Office (DACO@b2ai-voice.org). See thesis Appendices C and D. |
+| Bridge2AI-Voice (adult) | `pd-datasets/bridge2ai/` | Controlled access only: application and Data Transfer and Use Agreement through the consortium's Data Access Compliance Office (DACO@b2ai-voice.org). |
 
 Bridge2AI is downloaded with `download_bridge2ai.py`, which needs a Synapse personal access
 token (View and Download scopes) written to `~/.synapseConfig` as
@@ -87,8 +85,10 @@ seeds (42 to 46); 1,000 bootstrap resamples.
    External datasets and Bridge2AI are extracted on first use by `transfer_any.get_set`
    (for Bridge2AI: `get_set("bridge2ai", task, 15)` for `vowel`, `ddk` and `speech`).
    Caches go to `data/embeddings/` and store speaker ids, which are checked on load.
-2. **Experiments** in the table below. Results go to `outputs/logs/`.
-3. **Tables and figures:** `thesis_tables.py`, `thesis_figures.py`, `thesis_appendix.py`.
+2. **Experiments.** `unified_experiments.py` runs every Chapter 4 experiment under one
+   protocol and writes `outputs/logs/unified/`; the scripts in the tables below produce the
+   remaining results. Results go to `outputs/logs/`.
+3. **Tables and figures:** `unified_tables.py`, `thesis_tables.py`, `thesis_figures.py`.
 
 ## 5. Where each result comes from
 
@@ -140,4 +140,3 @@ seeds (42 to 46); 1,000 bootstrap resamples.
   `src/pdvoice/data/bridge2ai.py`.
 - The first-session check and the recording-setup checks quoted in Section 4.4 (sessions,
   microphone, input gain, protocol version) use `load_bridge2ai(recording_meta=True)`.
-- `RESEARCH_STATE.md` records every finding with the script and numbers behind it.

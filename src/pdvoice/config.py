@@ -11,7 +11,7 @@ from pathlib import Path
 # Project root = two levels up from this file (src/pdvoice/config.py -> project/).
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
-# --- raw datasets (git-ignored; see PROJECT_CONTEXT.md §3) ---
+# --- raw datasets (git-ignored) ---
 PD_DATASETS = PROJECT_ROOT / "pd-datasets"
 MPOWER_DIR = PD_DATASETS / "mpower"
 IPVS_DIR = PD_DATASETS / "Italian Parkinson's Voice and speech"

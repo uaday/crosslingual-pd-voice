@@ -1,4 +1,4 @@
-"""Model Card + Datasheet writers (PROJECT_CONTEXT.md §4.2, reporting layer).
+"""Model Card + Datasheet writers (reporting layer).
 
 Minimal Markdown emitters so every model/dataset ships with provenance, intended
 use and known limitations. Extend the templates as the project matures.

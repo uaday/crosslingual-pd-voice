@@ -1,4 +1,4 @@
-"""Discrimination metrics + significance tests (PROJECT_CONTEXT.md §4.4).
+"""Discrimination metrics + significance tests.
 
 AUROC (primary) and AUPRC, with 95% bootstrap CIs. For comparing two models on the
 same test set: a paired bootstrap (robust default) and DeLong's test for AUROC.

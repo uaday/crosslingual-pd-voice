@@ -1,4 +1,4 @@
-"""Layer-1 baselines (PROJECT_CONTEXT.md §4.5).
+"""Layer-1 baselines.
 
 - ``sklearn_baseline``: classical-feature or embedding classifiers (SVM / RF / GBT),
   standardised, with calibrated probability output.

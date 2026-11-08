@@ -1,6 +1,6 @@
 """Loader for MDVR-KCL (Mobile Device Voice Recordings, King's College London).
 
-Folder layout (see PROJECT_CONTEXT.md §3.2):
+Folder layout:
     <root>/ReadText/{HC,PD}/<file>.wav
     <root>/SpontaneousDialogue/{HC,PD}/<file>.wav
 

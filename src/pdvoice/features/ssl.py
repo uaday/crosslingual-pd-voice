@@ -2,8 +2,7 @@
 
 Run each encoder once in inference mode, pool the hidden states to a fixed-length
 vector, and cache to disk (float16). The shallow head then trains on the cache.
-This fits the 5 GB vGPU and matches the field's dominant recipe (PROJECT_CONTEXT.md
-§4.2, §7). wav2vec2 / WavLM / HuBERT / XLS-R share this code path; Whisper uses a
+This fits the 5 GB vGPU and matches the field's dominant recipe. wav2vec2 / WavLM / HuBERT / XLS-R share this code path; Whisper uses a
 different (encoder-decoder + log-mel) API and is a TODO.
 """
 

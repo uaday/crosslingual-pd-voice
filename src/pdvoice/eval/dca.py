@@ -1,4 +1,4 @@
-"""Decision Curve Analysis (PROJECT_CONTEXT.md §4.4).
+"""Decision Curve Analysis.
 
 Net benefit of the model vs treat-all / treat-none over the screening threshold band
 (default 0.05-0.30). NB = TP/n - FP/n * (pt / (1 - pt)).

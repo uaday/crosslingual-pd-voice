@@ -1,11 +1,11 @@
 # Makefile — common project tasks. Run `make help` for the list.
-# Most targets are thin wrappers around the pdvoice package / notebooks.
+# Most targets are thin wrappers around the pdvoice package.
 
 .PHONY: help env install kernel test lint format clean
 
 help:
 	@echo "Targets:"
-	@echo "  env       - create the conda environment from env/environment.yml"
+	@echo "  env       - create .venv and install the requirements"
 	@echo "  install   - pip install -e . (editable package)"
 	@echo "  kernel    - register the Jupyter kernel 'pdvoice'"
 	@echo "  test      - run pytest"
@@ -14,7 +14,8 @@ help:
 	@echo "  clean     - remove caches and build artifacts"
 
 env:
-	conda env create -f env/environment.yml
+	python -m venv .venv
+	.venv/Scripts/python -m pip install -r env/requirements-gpu.txt
 
 install:
 	pip install -e .

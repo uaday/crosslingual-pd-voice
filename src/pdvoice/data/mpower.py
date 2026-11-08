@@ -8,7 +8,7 @@ LABELS: mPower's PD label is SELF-REPORT and lives in the Demographics Survey
 table (keyed by healthCode), which is a separate Synapse download and NOT in the
 audio manifest. Pass ``demographics_csv`` (with columns healthCode +
 professional-diagnosis) to attach labels; otherwise label is left as <NA>.
-See PROJECT_CONTEXT.md §3.2 (self-report validity threat).
+mPower diagnoses are self-reported, which is a validity threat.
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ from pdvoice.data.base import new_manifest
 
 def _local_wav(record_id: str) -> str | None:
     """Reconstruct the converted wav path (robust to the stale absolute paths
-    stored in the sample manifest — see PROJECT_CONTEXT.md §8)."""
+    stored in the sample manifest)."""
     p = MPOWER_DIR / "wav" / f"{record_id}__audio.wav"
     return str(p.resolve()) if p.exists() else None
 
@@ -39,7 +39,7 @@ def _fallback_wav_path(value) -> str | None:
     NOTE: the same truthy-string trap as ``_to_binary``. ``str(nan)`` is the
     non-empty string ``"nan"``, so a guard like ``if str(r.get("wavPath", ""))``
     passes for MISSING files and yields 7,410 phantom rows whose path is literally
-    "nan" (11.4% of the manifest, and PD-enriched 2.7x — see PROJECT_CONTEXT.md §8).
+    "nan" (11.4% of the manifest, and PD-enriched 2.7x).
     Reject the placeholder tokens explicitly, and require the file to exist.
     """
     if value is None or not isinstance(value, str):

@@ -1,6 +1,6 @@
 """Tables for Chapter 4 from the unified layer-11 experiments (scripts/unified_experiments.py).
 
-Writes thesis/tables/u_*.tex. Every cell is the mean over five seeds; where a cell is a
+Writes outputs/tables/u_*.tex. Every cell is the mean over five seeds; where a cell is a
 headline result, the participant bootstrap interval pooled over seeds is given.
 """
 from __future__ import annotations
@@ -12,7 +12,7 @@ from sklearn.metrics import roc_auc_score
 from pdvoice.config import LOGS
 
 U = LOGS / "unified"
-OUT = __import__("pathlib").Path(__file__).resolve().parents[1] / "thesis" / "tables"
+OUT = __import__("pathlib").Path(__file__).resolve().parents[1] / "outputs" / "tables"
 NAME = {"mpower": "mPower", "ipvs": "IPVS", "neurovoz": "NeuroVoz", "mdvr_kcl": "MDVR-KCL",
         "bridge2ai": "Bridge2AI"}
 TASK = {"vowel": "vowel", "ddk": "DDK", "speech": "speech"}
@@ -409,6 +409,7 @@ def t_noise():
 
 
 def main():
+    OUT.mkdir(parents=True, exist_ok=True)
     t_noise()
     R, S = load()
     t_within(R, S)

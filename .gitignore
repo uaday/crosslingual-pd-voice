@@ -60,10 +60,8 @@ __pycache__/
 .ipynb_checkpoints/
 .venv/
 venv/
-ENV/
 .python-version
-# NOTE: bare "env/" is intentionally NOT ignored — this repo uses env/ for the
-# conda environment.yml + SETUP.md. Conda envs are named (pdvoice), not local.
+# NOTE: env/ is NOT ignored: it holds env/requirements-gpu.txt.
 
 # ── Credentials / secrets (never commit) ──
 .env
@@ -112,3 +110,6 @@ dist/
 .pytest_cache/
 .ruff_cache/
 thesis/Main.pdf
+
+# Rahmatallah et al. (2025) Table S1 carries mPower participant identifiers: keep local
+references/rahmatallah2025_tableS1.csv

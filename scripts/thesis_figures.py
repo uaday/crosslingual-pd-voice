@@ -3,10 +3,10 @@
 Same contract as scripts/thesis_tables.py, and for the same reason: the previous
 hand-made figures in outputs/figures/writeup/ drifted from the artifacts they describe
 (methods.png shows SSL 0.805 where the artifact now says 0.724). Figures are regenerated
-from outputs/logs/ on demand and written to thesis/figures/.
+from outputs/logs/ on demand and written to outputs/figures/.
 
 Diagrams -- the pipeline block diagram and the split/lock schematic -- are NOT here.
-Those are drawn by hand and saved as PDF in thesis/figures/.
+Those are drawn by hand and saved as PDF in outputs/figures/.
 
 Run:  .venv\\Scripts\\python.exe scripts\\thesis_figures.py
 """
@@ -25,7 +25,7 @@ import pandas as pd
 
 from pdvoice.config import LOGS
 
-OUT = Path(__file__).resolve().parents[1] / "thesis" / "figures"
+OUT = Path(__file__).resolve().parents[1] / "outputs" / "figures"
 
 # Print-friendly: greyscale-safe ordering, no reliance on colour alone.
 plt.rcParams.update({

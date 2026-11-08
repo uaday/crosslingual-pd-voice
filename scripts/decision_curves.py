@@ -18,7 +18,7 @@ PREVALENCE. Out-of-fold predictions come from classifier_comparison.py on two co
     and net benefit is computed at prevalence 0.187.
 
 Outputs: outputs/logs/decision_curves.csv, a summary in decision_curves.json, and
-thesis/figures/fig_decision_curves.pdf.
+outputs/figures/fig_decision_curves.pdf.
 
 Run:  .venv\\Scripts\\python.exe scripts\\decision_curves.py
 """
@@ -37,7 +37,7 @@ import pandas as pd
 
 from pdvoice.config import LOGS
 
-FIG = Path(__file__).resolve().parents[1] / "thesis" / "figures"
+FIG = Path(__file__).resolve().parents[1] / "outputs" / "figures"
 TARGET_PREV = 0.187
 GRID = np.round(np.arange(0.05, 0.501, 0.01), 3)
 MODELS = [("SSL embeddings (2048)", "SVM (RBF)", "SSL, SVM"),

@@ -1,6 +1,6 @@
 """Loader for the Italian Parkinson's Voice and Speech (IPVS / Dimauro 2017) dataset.
 
-Folder layout (see PROJECT_CONTEXT.md §3.2):
+Folder layout:
     <root>/15 Young Healthy Control/<Speaker>/<CODE...>.wav      -> HC
     <root>/22 Elderly Healthy Control/<Speaker>/<CODE...>.wav    -> HC
     <root>/28 People with Parkinson's disease/<1-5|.../<Speaker>/<CODE...>.wav -> PD

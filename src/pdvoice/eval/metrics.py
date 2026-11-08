@@ -1,7 +1,7 @@
 """Threshold-dependent metrics, operating-point selection, and calibration error.
 
 Operating threshold = Youden's J on the validation fold; also report sensitivity at
-a fixed 90% specificity (PROJECT_CONTEXT.md §4.4). ECE/MCE quantify calibration.
+a fixed 90% specificity. ECE/MCE quantify calibration.
 """
 
 from __future__ import annotations
