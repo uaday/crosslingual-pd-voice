@@ -91,16 +91,26 @@ def load_external(ds, task):
     edf = edf[edf.task_kind == task].copy()
     edf, _ = quality_control(edf)
     edf = edf.reset_index(drop=True)
-    E = np.load(EMBEDDINGS / f"{ds}__{MODEL}__{task}__L{LAYER}.npz")["X"].astype(np.float32)
+    z = np.load(EMBEDDINGS / f"{ds}__{MODEL}__{task}__L{LAYER}.npz", allow_pickle=True)
+    E = z["X"].astype(np.float32)
     assert len(E) == len(edf), f"{ds}: {len(E)} != {len(edf)}"
+    if "path" in z:  # recording-level identity, not just the row count
+        assert list(z["path"].astype(str)) == edf.path.astype(str).tolist(), f"{ds}: cache order"
     return edf, E
 
 
-def train_locked(X, y, groups, seed):
+def train_locked(X, y, groups, seed, erase_df=None):
+    """Locked head + calibrator. With `erase_df`, a LEACE eraser is fitted on the head's
+    TRAINING rows only (after the split) and applied to everything else; it used to be
+    fitted on the whole source cohort, validation rows included. Returns the transform
+    to apply to external data as well."""
     tr, va = next(GroupShuffleSplit(1, test_size=VAL_FRACTION, random_state=seed).split(X, y, groups))
-    head, vlog = fit_mlp_head(X[tr], y[tr], X[va], y[va], seed=seed)
+    tf = (lambda E: E)
+    if erase_df is not None:
+        tf = LeaceEraser().fit(X[tr], concept(erase_df.iloc[tr])).transform
+    head, vlog = fit_mlp_head(tf(X[tr]), y[tr], tf(X[va]), y[va], seed=seed)
     _, cal = select_best_by_brier(vlog, y[va])
-    return head, cal
+    return head, cal, tf
 
 
 def score(head, cal, E):
@@ -216,10 +226,9 @@ def main() -> None:
             m = maskfn(seed)
             sub, X = base[m].reset_index(drop=True), X_all[m]
             y, g = sub.label.to_numpy(), sub.subject_id.to_numpy()
-            er = LeaceEraser().fit(X, concept(sub))
-            for cond, Xs, tf in (("original", X, lambda E: E),
-                                 ("erased", er.transform(X), er.transform)):
-                head, cal = train_locked(Xs, y, g, seed)
+            for cond in ("original", "erased"):
+                head, cal, tf = train_locked(X, y, g, seed,
+                                             erase_df=sub if cond == "erased" else None)
                 for ds, (edf, E) in ext.items():
                     a = subject_auroc(edf.subject_id, edf.label.astype(int), score(head, cal, tf(E)))
                     rows.append(dict(source=cname, seed=seed, cond=cond, target=ds, auroc=round(a, 4)))

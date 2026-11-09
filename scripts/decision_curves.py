@@ -17,8 +17,14 @@ PREVALENCE. Out-of-fold predictions come from classifier_comparison.py on two co
         logit p' = logit p + logit(0.187) - logit(0.5),
     and net benefit is computed at prevalence 0.187.
 
-Outputs: outputs/logs/decision_curves.csv, a summary in decision_curves.json, and
+Outputs: outputs/logs/decision_curves.csv, a summary in decision_curves.json (with the
+hash of its input predictions in decision_curves.json.inputs.json), and
 outputs/figures/fig_decision_curves.pdf.
+
+RERUN THIS (at both prevalences) WHENEVER classifier_comparison.py IS RERUN:
+    python scripts/decision_curves.py
+    python scripts/decision_curves.py --prevalence 0.054
+pdvoice.provenance.stale() reports these curves as out of date if their predictions change.
 
 Run:  .venv\\Scripts\\python.exe scripts\\decision_curves.py
 """
@@ -36,6 +42,7 @@ import numpy as np
 import pandas as pd
 
 from pdvoice.config import LOGS
+from pdvoice.provenance import stamp
 
 FIG = Path(__file__).resolve().parents[1] / "outputs" / "figures"
 TARGET_PREV = 0.187
@@ -62,7 +69,10 @@ def curve(y, p, prev):
         rows.append(dict(pt=float(pt), sens=float(sens), spec=float(spec),
                          nb=float(prev * sens - (1 - prev) * (1 - spec) * w),
                          nb_all=float(prev - (1 - prev) * w),
-                         flagged=float(np.mean(pred))))
+                         # share of the SCREENED POPULATION referred, at prevalence `prev`
+                         # (was the raw share of the study cohort, which on the 50/50
+                         # age-matched cohort is not the referral rate at 0.187)
+                         flagged=float(prev * sens + (1 - prev) * (1 - spec))))
     return pd.DataFrame(rows)
 
 
@@ -75,7 +85,8 @@ def main() -> None:
                          "decision_curves__prev<p>.csv/json and draws no figure")
     TARGET_PREV = ap.parse_args().prevalence
     tag = "" if abs(TARGET_PREV - 0.187) < 1e-9 else f"__prev{TARGET_PREV:g}"
-    d = pd.read_csv(LOGS / "classifier_predictions.csv")
+    src = LOGS / "classifier_predictions.csv"
+    d = pd.read_csv(src)
     out, summary = [], {}
     for cohort in ("confounded", "age-matched"):
         for feat, clf, name in MODELS:
@@ -105,6 +116,8 @@ def main() -> None:
     D = pd.concat(out)
     D.to_csv(LOGS / f"decision_curves{tag}.csv", index=False)
     (LOGS / f"decision_curves{tag}.json").write_text(json.dumps(summary, indent=2))
+    # record which predictions these curves were computed from (see pdvoice.provenance)
+    stamp(LOGS / f"decision_curves{tag}.json", [src])
     for k, v in summary.items():
         print(f"{k:<40} {v}")
     if tag:

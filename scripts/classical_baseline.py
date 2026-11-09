@@ -122,8 +122,10 @@ def main():
 
     scenarios = {"baseline": np.ones(len(df), bool), "age-matched": df.subject_id.isin(age_match_ids(df)).to_numpy()}
     print(f"\n  {'scenario':<13}{'model':<6}{'AUROC':<22}{'AUPRC':<8}{'PD/HC subj'}")
-    SSL_REF = {"baseline": 0.803, "age-matched": 0.621}   # XLS-R L15 within-mPower
-    results = {"cap": args.cap, "n_rec": len(df), "SSL_reference": SSL_REF, "scenarios": {}}
+    # No SSL reference is printed here: the comparable SSL figures come from fusion.py and
+    # classifier_comparison.py on the same recordings (the old hard-coded 0.803 / 0.621
+    # were from an earlier layer-15 protocol).
+    results = {"cap": args.cap, "n_rec": len(df), "scenarios": {}}
     for name, mask in scenarios.items():
         sub, Fm, ym = df[mask].reset_index(drop=True), F[mask].reset_index(drop=True), y[mask]
         npd = sub[sub.label == 1].subject_id.nunique(); nhc = sub[sub.label == 0].subject_id.nunique()
@@ -132,7 +134,6 @@ def main():
             a, lo, hi, ap = cv_auroc(sub, Fm, ym, mdl)
             results["scenarios"][name]["models"][mdl] = {"auroc": a, "auroc_ci": [lo, hi], "auprc": ap}
             print(f"  {name:<13}{mdl:<6}{a:.3f} [{lo:.3f},{hi:.3f}]      {ap:.3f}   {npd}/{nhc}")
-        print(f"  {name:<13}{'SSL':<6}{SSL_REF[name]:.3f}  (XLS-R L15, reference)")
     import json
     (LOGS / f"classical_baseline__cap{args.cap}.json").write_text(json.dumps(results, indent=2))
     print(f"\nTotal {(time.time()-t0)/60:.1f} min.")

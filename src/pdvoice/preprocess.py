@@ -7,6 +7,7 @@ per-chunk embeddings are averaged downstream (see features/ssl.py).
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Iterator
 
 import numpy as np
@@ -58,7 +59,10 @@ def spectral_gate(wav: np.ndarray, n_fft: int = 1024, hop: int = 256, k: float =
 def voice_activity_trim(wav: np.ndarray, sr: int = SAMPLE_RATE) -> np.ndarray:
     """Strip non-speech regions from connected speech.
 
-    Tries silero-vad; falls back to an energy-based trim if it isn't available.
+    Tries silero-vad; falls back to an energy-based trim if it isn't available, raises,
+    or finds no speech. Which path each call took is counted in ``VAD_STATS`` (and the
+    first failure is reported with its reason), so a run can state how many recordings
+    were trimmed by the fallback instead of the fallback being silent.
     """
     try:
         import torch
@@ -68,10 +72,19 @@ def voice_activity_trim(wav: np.ndarray, sr: int = SAMPLE_RATE) -> np.ndarray:
         t = torch.from_numpy(wav)
         ts = get_speech_timestamps(t, model, sampling_rate=sr)
         if ts:
+            VAD_STATS["silero"] += 1
             return collect_chunks(ts, t).numpy()
-    except Exception:  # noqa: BLE001 — VAD is best-effort; never fail preprocessing on it
-        pass
+        VAD_STATS["fallback_no_speech"] += 1
+    except Exception as e:  # noqa: BLE001 — VAD is best-effort; never fail preprocessing on it
+        if not VAD_STATS["fallback_error"]:
+            warnings.warn(f"silero-vad failed ({type(e).__name__}: {e}); using the energy "
+                          "trim. Count in pdvoice.preprocess.VAD_STATS.")
+        VAD_STATS["fallback_error"] += 1
     return trim_silence(wav)
+
+
+# how voice_activity_trim handled each call in this process (see its docstring)
+VAD_STATS = {"silero": 0, "fallback_no_speech": 0, "fallback_error": 0}
 
 
 def preprocess_clip(path, task_kind: str, sr: int = SAMPLE_RATE,

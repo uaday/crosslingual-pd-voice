@@ -22,6 +22,18 @@ DEFAULT_MODELS = {
 }
 
 
+# Exact Hugging Face commits used for every cached embedding (REPRODUCE.md). Passing them
+# to from_pretrained pins the weights: without it a fresh download takes whatever the
+# model's main branch holds that day.
+REVISIONS = {
+    "facebook/wav2vec2-xls-r-300m": "1a640f32ac3e39899438a2931f9924c02f080a54",
+    "facebook/wav2vec2-base": "0b5b8e868dd84f03fd87d01f9c4ff0f080fecfe8",
+    "facebook/hubert-large-ll60k": "ff022d095678a2995f3c49bab18a96a9e553f782",
+    "microsoft/wavlm-large": "c1423ed94bb01d80a3f5ce5bc39f6026a0f4828c",
+    "openai/whisper-small": "973afd24965f72e36ca33b3055d56a652f456b4d",
+}
+
+
 def select_device(device: str | None = None) -> str:
     import torch
 
@@ -49,8 +61,9 @@ def load_encoder(model_id: str, device: str | None = None):
     from transformers import AutoFeatureExtractor, AutoModel
 
     device = select_device(device)
-    extractor = AutoFeatureExtractor.from_pretrained(model_id)
-    model = AutoModel.from_pretrained(model_id).to(device).eval()
+    rev = REVISIONS.get(model_id)
+    extractor = AutoFeatureExtractor.from_pretrained(model_id, revision=rev)
+    model = AutoModel.from_pretrained(model_id, revision=rev).to(device).eval()
     return model, extractor, device
 
 

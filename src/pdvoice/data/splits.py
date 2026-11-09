@@ -59,7 +59,34 @@ def train_val_test_indices(
     test_idx = df.index[df["fold"] == test_fold].to_numpy()
     gss = GroupShuffleSplit(n_splits=1, test_size=val_fraction, random_state=seed)
     tr_pos, va_pos = next(gss.split(dev, dev[label_col], dev[group_col]))
+    tr_pos, va_pos = ensure_two_class_val(tr_pos, va_pos, dev[label_col].to_numpy(),
+                                          dev[group_col].to_numpy(), seed, val_fraction)
     return dev.index[tr_pos].to_numpy(), dev.index[va_pos].to_numpy(), test_idx
+
+
+def ensure_two_class_val(tr, va, y, groups, seed: int = SEED,
+                         val_fraction: float = VAL_FRACTION):
+    """Guarantee both classes in the validation split (and hence in training).
+
+    A small cohort can leave GroupShuffleSplit's validation slice with one class, which
+    calibration cannot be fitted on (a synthetic balanced 20-person cohort did so in 93 of
+    500 seed/fold draws). Only then is the split redrawn, from the same development rows,
+    with a stratified participant split; a split that already holds both classes is
+    returned unchanged. This is the rule unified_experiments.py has always applied; it
+    now lives here so every caller gets it. Raises if the development rows themselves
+    hold one class.
+    """
+    tr, va = np.asarray(tr), np.asarray(va)
+    y, groups = np.asarray(y), np.asarray(groups)
+    if len(np.unique(y[va])) == 2:
+        return tr, va
+    pool = np.concatenate([tr, va])
+    if len(np.unique(y[pool])) < 2:
+        raise ValueError("the development rows hold only one class")
+    k = max(2, int(round(1 / val_fraction)))
+    a, b = next(StratifiedGroupKFold(k, shuffle=True, random_state=seed)
+                .split(pool, y[pool], groups[pool]))
+    return pool[a], pool[b]
 
 
 def assert_disjoint(df: pd.DataFrame, *idx_groups: np.ndarray, group_col: str = "subject_id") -> None:

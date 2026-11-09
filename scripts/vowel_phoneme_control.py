@@ -49,9 +49,14 @@ def main() -> None:
     seeds = [int(s) for s in args.seeds.split(",")]
 
     d = np.load(EMBEDDINGS / f"mpower_full__{MODEL}__L{LAYER}.npz", allow_pickle=True)
-    emb = pd.DataFrame({"subject_id": d["subject_id"].astype(str)})
+    emb = pd.DataFrame({"path": d["path"].astype(str)})
     emb["row"] = np.arange(len(emb))
-    base = load_mpower_cohort(cap=3, seed=42).merge(emb, on="subject_id", how="inner")
+    # Join on the RECORDING PATH, one to one. This used to join on subject_id, which is
+    # not unique on either side: every cached recording of each sampled speaker was
+    # pulled in (12,053 intended rows became 163,670), undoing the cap of three.
+    cohort = load_mpower_cohort(cap=3, seed=42)
+    base = cohort.merge(emb, on="path", how="inner", validate="one_to_one")
+    assert len(base) == len(cohort), f"{len(cohort) - len(base)} cohort recordings not cached"
 
     # externals, with a mask marking the /a/ rows
     ext = {}

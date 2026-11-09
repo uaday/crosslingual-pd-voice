@@ -110,9 +110,9 @@ def t_within(R, S):
           "after matching on age.",
           "tab:u-within",
           "Participant-level AUROC, mean over five seeds; 5-fold participant-disjoint "
-          "cross-validation of the framework head at layer 11. 95\\% CI: participant "
-          "bootstrap of the age-matched voice result, 200 resamples per seed, pooled over "
-          "seeds. Age: AUROC of age alone. "
+          "cross-validation of the framework head at layer 11. 95\\% interval: participant "
+          "bootstrap of the age-matched voice result, 200 resamples per seed; "
+          "it pools the participant bootstraps of the five seeds, so it mixes participant and seed variability and is not a bootstrap interval of the five-seed mean. Age: AUROC of age alone. "
           "Pairs: participants per group after frequency matching in five-year bins. Age, "
           "sex: matched jointly on age and sex. -- : the dataset does not record the variable.")
 
@@ -252,18 +252,19 @@ def t_task_compare(src="task_comparison.json", name="u_task_compare",
     ahead = sum(x > 0 for x in vd)
     sign = binomtest(ahead, len(vd), 0.5, alternative="greater").pvalue
     extra = (f" Across the {len(vd)} transfer directions speech is ahead of the vowel in "
-             f"{ahead} (one-sided sign test $p = {sign:.3f}$); the per-direction intervals are "
+             f"{ahead} (one-sided sign test $p = {sign:.3f}$, nominal: the directions share "
+             "datasets, so they are not independent); the per-direction intervals are "
              "not adjusted for multiplicity." + extra)
     body = tab([r"\textbf{Comparison}", r"\textbf{Speech}", r"\textbf{Other task}",
                 r"\textbf{Difference [95\% CI]}", r"\textbf{Ahead}", r"\textbf{PD / HC}"],
                rows, "lccccc", r"\scriptsize", "2pt")
     write(name, body,
           caption or "Connected speech against the vowel and diadochokinesis with the training "
-          "source and the participants held fixed.",
+          "dataset and the test participants held fixed.",
           label,
           "Participant-level AUROC, mean over five seeds; only participants scored under both "
           "tasks. Difference: speech minus the other task, with a participant-bootstrap 95\\% "
-          "interval (200 resamples per seed, pooled). Ahead: seeds in which speech "
+          "interval (200 resamples per seed, pooled over the seeds). Ahead: seeds in which speech "
           "scores higher. MDVR-KCL has no vowel or DDK recordings." + extra)
 
 
@@ -429,8 +430,9 @@ def main():
           "Participant-level AUROC, mean $\\pm$ standard deviation over five seeds; layer 11. "
           "Columns: the training cohort. MDVR-KCL records no age, so it is trained on as "
           "released only. Rows marked matched score the same predictions on test "
-          "participants matched on age. 95\\% CI: participant bootstrap of the age-matched "
-          "column, 200 resamples per seed, pooled over seeds.", ci_cond="agematched")
+          "participants matched on age. 95\\% interval: participant bootstrap of the "
+          "age-matched column, 200 resamples per seed; it pools the participant bootstraps of the five seeds, so it mixes participant and seed variability and is not a bootstrap interval of the five-seed mean.",
+          ci_cond="agematched")
     t_exp(R, S, "exp3", ["uncorrected", "agematched", "agesexmatched"],
           "Same-source control of Experiment 2: the framework trained on the sustained vowel or the diadochokinetic "
           "task of one dataset and applied, locked, to the same task in every other dataset.",

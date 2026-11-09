@@ -60,13 +60,13 @@ def main() -> None:
     warnings.simplefilter("ignore")
 
     d = np.load(EMBEDDINGS / f"mpower_full__{MODEL}__L{LAYER}.npz", allow_pickle=True)
-    emb = pd.DataFrame({"subject_id": d["subject_id"].astype(str),
-                        "label": d["label"].astype(int)})
+    emb = pd.DataFrame({"path": d["path"].astype(str)})
     emb["row"] = np.arange(len(emb))
 
     df = load_mpower_cohort(cap=1, seed=args.seed)
-    df = attach_sex(df).merge(emb[["subject_id", "row"]].drop_duplicates("subject_id"),
-                              on="subject_id", how="inner")
+    # join on the SAMPLED RECORDING's path; this used to keep each speaker's first cached
+    # embedding instead, a different recording for 2,885 of 4,809 speakers
+    df = attach_sex(df).merge(emb, on="path", how="inner", validate="one_to_one")
     df = df.dropna(subset=["sex", "age"]).reset_index(drop=True)
     X = d["X"][df.row.to_numpy()].astype(np.float32)
     y = df.label.to_numpy()

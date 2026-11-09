@@ -97,7 +97,7 @@ def delong_roc_test(y, p1, p2):
     cov = np.cov(v01) / m + np.cov(v10) / n
 
     lvec = np.array([[1.0, -1.0]])
-    var = float(lvec @ cov @ lvec.T)
+    var = (lvec @ cov @ lvec.T).item()  # explicit scalar: float() of a 1x1 array is deprecated
     z = (aucs[0] - aucs[1]) / np.sqrt(var + 1e-12)
     return float(aucs[0]), float(aucs[1]), float(2.0 * stats.norm.sf(abs(z)))
 

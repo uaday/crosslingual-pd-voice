@@ -52,8 +52,10 @@ def main() -> None:
     from transformers import AutoFeatureExtractor, AutoModel
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    extractor = AutoFeatureExtractor.from_pretrained(MODEL_ID)
-    model = AutoModel.from_pretrained(MODEL_ID).to(device).eval()
+    from pdvoice.features.ssl import REVISIONS
+    rev = REVISIONS.get(MODEL_ID)
+    extractor = AutoFeatureExtractor.from_pretrained(MODEL_ID, revision=rev)
+    model = AutoModel.from_pretrained(MODEL_ID, revision=rev).to(device).eval()
     print(f"encoder on {device}; extracting layer {args.layer} ...", flush=True)
 
     vecs = np.zeros((len(df), 2048), dtype=np.float16)

@@ -35,10 +35,18 @@ second 2 of a 10 s mPower file and the SSL window near second 5.
 
 AMPLITUDE
 ---------
-No loudness normalisation is applied, and none is needed: every measure here is
-amplitude-invariant by construction. `scripts/audits/amplitude_vs_harmonics.py` verifies
-this empirically -- attenuating by 60 dB and renormalising changes F0, HNR, jitter and
-shimmer by 0.00%.
+No loudness normalisation is applied. Forty-one of the 42 measures do not depend on
+recording level: F0, jitter, shimmer, HNR and the formants are ratios or periods
+(`scripts/audits/amplitude_vs_harmonics.py`: attenuating by 60 dB changes F0, HNR, jitter
+and shimmer by 0.00%), and a gain change adds a constant to log-mel energy, which moves
+only cepstral coefficient 0 and leaves its standard deviation and coefficients 1-12
+unchanged. The exception is ``mfcc_0`` (the MEAN of coefficient 0), which tracks overall
+level: a 20 dB gain moves it by about 226 units. It therefore carries recording level and
+loudness, which mixes a disease sign (hypophonia) with microphone distance and device
+gain. Two smaller caveats hold for very quiet recordings: the log-mel step has an absolute
+floor (librosa's amin), so around -40 dB and below the other cepstral coefficients start
+to shift as well, and 16-bit quantisation adds noise that perturbs HNR and the formants. `scripts/fusion.py --drop mfcc_0` is the sensitivity check without it. (Before
+2026-11-09 this docstring claimed every measure was amplitude-invariant.)
 """
 
 from __future__ import annotations

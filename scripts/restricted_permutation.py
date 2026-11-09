@@ -9,7 +9,7 @@ this pipeline scores when it can use age but nothing else", and the observed sco
 compared with it.
 
 Pipeline (refitted for every permutation): one recording per participant from the
-uncorrected mPower cohort, XLS-R layer 15 mean+std embeddings, PCA to 64 dimensions inside
+uncorrected mPower cohort, XLS-R layer 11 mean+std embeddings, PCA to 64 dimensions inside
 each training fold, logistic regression, 5-fold participant-disjoint cross-validation.
 A linear probe is used so that hundreds of refits are affordable; the observed score is
 reported for the same probe.
@@ -85,10 +85,12 @@ def main() -> None:
     warnings.simplefilter("ignore")
 
     d = np.load(EMBEDDINGS / f"mpower_full__{MODEL}__L{LAYER}.npz", allow_pickle=True)
-    emb = pd.DataFrame({"subject_id": d["subject_id"].astype(str)})
+    emb = pd.DataFrame({"path": d["path"].astype(str)})
     emb["row"] = np.arange(len(emb))
     df = load_mpower_cohort(cap=1, seed=args.seed)
-    df = attach_sex(df).merge(emb.drop_duplicates("subject_id"), on="subject_id", how="inner")
+    # join on the SAMPLED RECORDING's path; this used to keep each speaker's first cached
+    # embedding instead, a different recording for 2,885 of 4,809 speakers
+    df = attach_sex(df).merge(emb, on="path", how="inner", validate="one_to_one")
     df = df.dropna(subset=["age"]).reset_index(drop=True)
     X = d["X"][df.row.to_numpy()].astype(np.float32)
     y = df.label.to_numpy().astype(int)
@@ -119,6 +121,7 @@ def main() -> None:
         v = np.asarray(v)
         res[k] = dict(null_mean=round(float(v.mean()), 4), null_sd=round(float(v.std()), 4),
                       null_95th=round(float(np.quantile(v, 0.95)), 4),
+                      exceedances=int(np.sum(v >= observed)),
                       p_value=round(float((np.sum(v >= observed) + 1) / (len(v) + 1)), 4),
                       excess_over_null=round(float(observed - v.mean()), 4))
         print(f"{k:<18} null {v.mean():.3f} +/- {v.std():.3f} (95th {np.quantile(v, .95):.3f}) "
