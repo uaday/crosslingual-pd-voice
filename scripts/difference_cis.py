@@ -32,7 +32,7 @@ from sklearn.metrics import roc_auc_score
 sys.path.insert(0, str(Path(__file__).parent))
 from encoder_layer_sweep import linear_probe, load  # noqa: E402
 
-from pdvoice.config import LOGS  # noqa: E402
+from pdvoice.config import EMBEDDINGS, LOGS  # noqa: E402
 from pdvoice.provenance import stamp  # noqa: E402
 
 N = 1000
@@ -118,8 +118,12 @@ def main() -> None:
     print("holm", json.dumps(out["holm"])[:600], flush=True)
 
     (LOGS / "difference_cis.json").write_text(json.dumps(out, indent=2))
+    # every input that determines a component: the encoder rows depend on the layer
+    # selection and the all-layer caches, the rest on the prediction files
     stamp(LOGS / "difference_cis.json",
-          [LOGS / "classifier_predictions.csv", LOGS / "fusion__xls-r-300m__L11.json",
+          [LOGS / "encoder_layer_sweep.json",
+           *[EMBEDDINGS / f"layersweep__{m}__agematched.npz" for m in oofs],
+           LOGS / "classifier_predictions.csv", LOGS / "fusion__xls-r-300m__L11.json",
            *[LOGS / f"fusion_preds__age-matched__{k}.csv"
              for k in ("SSL_only", "classical_only", "FUSION")]])
     print("wrote difference_cis.json")

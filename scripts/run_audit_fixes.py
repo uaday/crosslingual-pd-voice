@@ -48,10 +48,19 @@ STEPS = [
 ]
 
 
-def main() -> None:
+def main(argv=None) -> int:
+    """Run the chain; stop at the first failed step and return a nonzero status.
+
+    Every step depends on the ones before it (predictions first, then what is derived
+    from them), so a failed step must not be followed by steps that would read its
+    older outputs. Before 2026-11-10 the return code was logged but not acted on.
+    """
     ap = argparse.ArgumentParser()
     ap.add_argument("--skip", default="", help="comma-separated step names already done")
-    skip = set(ap.parse_args().skip.split(","))
+    skip = set(filter(None, ap.parse_args(argv).skip.split(",")))
+    unknown = skip - {name for name, _, _ in STEPS}
+    if unknown:
+        raise SystemExit(f"unknown step(s) in --skip: {sorted(unknown)}")
     with open(LOG / "chain.log", "a") as chain:
         for name, args, env in STEPS:
             if name in skip:
@@ -63,8 +72,13 @@ def main() -> None:
                                      stderr=subprocess.STDOUT, env={**os.environ, **env})
             chain.write(f"{name} rc={rc} {(time.time() - t0) / 60:.1f} min\n")
             chain.flush()
+            if rc != 0:
+                chain.write(f"CHAIN FAILED at {name} (rc={rc}); later steps not run\n")
+                print(f"step {name} failed (rc={rc}); see {LOG / (name + '.log')}")
+                return rc
         chain.write("CHAIN DONE\n")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

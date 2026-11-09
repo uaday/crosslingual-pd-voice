@@ -18,17 +18,23 @@ def youden_threshold(y, p) -> float:
     return float(thr[int(np.argmax(tpr - fpr))])
 
 
-def threshold_metrics(y, p, threshold: float) -> dict:
-    """Confusion-matrix-derived metrics at a fixed operating threshold."""
+def threshold_metrics(y, p, threshold) -> dict:
+    """Confusion-matrix-derived metrics at an operating threshold.
+
+    ``threshold`` is one value or one per participant (for example each cross-validation
+    fold's own validation threshold). Decisions are ``p >= threshold`` directly, so an
+    infinite threshold (Youden's all-negative operating point) is handled exactly.
+    """
     y = np.asarray(y)
-    pred = (np.asarray(p) >= threshold).astype(int)
+    thr = np.asarray(threshold, dtype=float)
+    pred = (np.asarray(p) >= thr).astype(int)
     tn, fp, fn, tp = confusion_matrix(y, pred, labels=[0, 1]).ravel()
     sens = tp / (tp + fn) if (tp + fn) else 0.0
     spec = tn / (tn + fp) if (tn + fp) else 0.0
     ppv = tp / (tp + fp) if (tp + fp) else 0.0
     f1 = 2 * ppv * sens / (ppv + sens) if (ppv + sens) else 0.0
     return {
-        "threshold": float(threshold),
+        "threshold": float(thr) if thr.ndim == 0 else "per participant",
         "accuracy": (tp + tn) / len(y),
         "sensitivity": sens,
         "specificity": spec,

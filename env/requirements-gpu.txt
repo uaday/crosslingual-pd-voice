@@ -1,50 +1,54 @@
-# Runtime dependencies for the pdvoice pipeline (pip / venv path — GPU box, no conda).
-# torch + torchaudio are installed SEPARATELY from the CUDA index:
-#   pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu121
-# then:  pip install -r env/requirements-gpu.txt  &&  pip install -e .
+# Runtime dependencies for the pdvoice pipeline (pip / venv; no conda).
+# Exact versions of the environment that produced every thesis result (Windows 10,
+# Python 3.12, NVIDIA GPU with a CUDA 12.x driver).
+#
+# Install, from the project root (Windows paths; on Linux/macOS use .venv/bin/python):
+#   python -m venv .venv
+#   .venv\Scripts\python.exe -m pip install torch==2.5.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cu121
+#   .venv\Scripts\python.exe -m pip install -r env/requirements-gpu.txt
+#   .venv\Scripts\python.exe -m pip install -e .
+# torch and torchaudio come from the CUDA index above and must match each other exactly
+# (2.5.1+cu121); they are not listed here so pip does not replace them with CPU wheels.
 
 # --- core numerics / data ---
-numpy<2.0
-pandas
-scipy
-scikit-learn
-pyyaml
-joblib
-tqdm
+numpy==1.26.4          # must stay below 2.0
+pandas==3.0.5
+scipy==1.17.1
+scikit-learn==1.9.0    # StratifiedGroupKFold splits differ between versions
+pyyaml==6.0.3
+joblib==1.5.3
+tqdm==4.70.0
 
 # --- audio I/O + DSP ---
-librosa
-soundfile
-audioread
+librosa==0.11.0
+soundfile==0.14.0
+audioread==3.1.0
 
-# --- classical voice features (jitter/shimmer/HNR/VOT) ---
-praat-parselmouth
+# --- classical voice features (jitter/shimmer/HNR) ---
+praat-parselmouth==0.4.7
 
 # --- voice activity detection ---
-silero-vad
+silero-vad==6.2.1
 
 # --- SSL encoders ---
-# Pin to 4.x: transformers 5.x refuses to load torch.load/.bin weights unless
-# torch>=2.6 (CVE-2025-32434 guard), but the box is locked to torch 2.5.1+cu121
-# (CUDA 12.2 driver can't run cu124 wheels) and all shortlisted encoders ship
-# .bin only (no safetensors). 4.46.3 loads them fine.
+# transformers 5.x refuses to load .bin weights unless torch>=2.6 (CVE-2025-32434 guard),
+# and the encoders used here ship .bin only; 4.46.3 loads them with torch 2.5.1.
 transformers==4.46.3
 
 # --- re-implementation of Rahmatallah et al. 2025 (scripts/rahmatallah_cnn.py) ---
-# Keras 3 on the torch backend gives their InceptionV3 + ImageNet weights without
-# TensorFlow. ml-dtypes must stay <0.5 or pip pulls numpy 2.x and breaks numpy<2.0.
-keras>=3.6
-ml-dtypes<0.5
+# Keras 3 on the torch backend; ml-dtypes must stay <0.5 or pip pulls numpy 2.x.
+keras==3.15.1
+ml-dtypes==0.4.1
 
 # --- calibration / stats / plots ---
-statsmodels
-matplotlib
+statsmodels==0.14.6
+matplotlib==3.11.1
 
 # --- notebooks + tests ---
-ipykernel
-jupyter
-pytest
+ipykernel==7.3.0
+jupyter==1.1.1
+pytest==9.1.1
 
 # --- Bridge2AI-Voice download (scripts/download_bridge2ai.py) ---
-# token goes in ~/.synapseConfig, never in the repo
-synapseclient
+# the access token goes in ~/.synapseConfig, never in the repository
+synapseclient==4.14.0

@@ -55,7 +55,8 @@ from pdvoice.data import LOADERS
 from pdvoice.data.bridge2ai import confirmed_ids
 from pdvoice.data.common_tasks import common_task_mask
 from pdvoice.data.demographics import attach_age
-from pdvoice.data.splits import assign_folds, train_val_test_indices
+from pdvoice.data.splits import (assign_folds, ensure_two_class_val,
+                                 train_val_test_indices)
 from pdvoice.eval.metrics import calibration_error
 from pdvoice.models.head import fit_mlp_head
 from pdvoice.preprocess import quality_control
@@ -213,17 +214,11 @@ def test_cohorts(df, seed):
 
 # ---------------------------------------------------------------------- model + scoring
 def _ensure_two_class_val(tr, va, y, groups, seed):
-    """Small datasets can leave a validation split with one class, which calibration cannot
-    fit. Only then, redraw it from the training part with a stratified participant split;
-    every split that already contains both classes is left exactly as it was."""
-    if len(np.unique(y[va])) == 2:
-        return tr, va
-    from sklearn.model_selection import StratifiedGroupKFold
-    pool = np.concatenate([tr, va])
-    k = max(2, int(round(1 / VAL_FRACTION)))
-    a, b = next(StratifiedGroupKFold(k, shuffle=True, random_state=seed)
-                .split(pool, y[pool], groups[pool]))
-    return pool[a], pool[b]
+    """The shared rule (pdvoice.data.splits.ensure_two_class_val): both training and
+    validation hold both classes; a split that already does is returned unchanged, and
+    the stratified fallback this script always used is kept whenever it is valid.
+    """
+    return ensure_two_class_val(tr, va, y, groups, seed)
 
 
 def fit_locked(X, y, groups, seed):

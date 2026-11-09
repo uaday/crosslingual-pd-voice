@@ -64,29 +64,68 @@ def train_val_test_indices(
     return dev.index[tr_pos].to_numpy(), dev.index[va_pos].to_numpy(), test_idx
 
 
+def _two_class_split(tr, va, y, groups) -> bool:
+    """Both partitions hold both classes and share no participant."""
+    return (len(np.unique(y[tr])) == 2 and len(np.unique(y[va])) == 2
+            and not set(groups[tr]) & set(groups[va]))
+
+
 def ensure_two_class_val(tr, va, y, groups, seed: int = SEED,
                          val_fraction: float = VAL_FRACTION):
-    """Guarantee both classes in the validation split (and hence in training).
+    """Guarantee both classes in the training AND the validation split.
 
     A small cohort can leave GroupShuffleSplit's validation slice with one class, which
     calibration cannot be fitted on (a synthetic balanced 20-person cohort did so in 93 of
-    500 seed/fold draws). Only then is the split redrawn, from the same development rows,
-    with a stratified participant split; a split that already holds both classes is
-    returned unchanged. This is the rule unified_experiments.py has always applied; it
-    now lives here so every caller gets it. Raises if the development rows themselves
-    hold one class.
+    500 seed/fold draws), or, with very few participants in one class, leave training
+    without that class. The rule, in order:
+
+    1. a split that already holds both classes on both sides is returned unchanged;
+    2. otherwise the stratified participant split unified_experiments.py has always used
+       is tried, and kept if it is valid (so every earlier result is reproduced);
+    3. otherwise a participant-level stratified split is built directly: in each class,
+       ``round(val_fraction * n)`` participants (at least one, at most n - 1) go to
+       validation, so both sides hold both classes. Every recording of a participant
+       stays on one side, and the original row indices are returned.
+
+    Raises ValueError when no valid split exists: one class only, or a class with fewer
+    than two participants (training and validation cannot both contain it).
     """
     tr, va = np.asarray(tr), np.asarray(va)
     y, groups = np.asarray(y), np.asarray(groups)
-    if len(np.unique(y[va])) == 2:
+    if _two_class_split(tr, va, y, groups):
         return tr, va
     pool = np.concatenate([tr, va])
     if len(np.unique(y[pool])) < 2:
         raise ValueError("the development rows hold only one class")
+    people = pd.DataFrame({"g": groups[pool], "y": y[pool]}).groupby("g", sort=True).y
+    if (people.nunique() > 1).any():
+        raise ValueError("a participant has recordings with both labels")
+    per_class = people.first()
+    counts = per_class.value_counts()
+    if counts.min() < 2:
+        raise ValueError(
+            f"a class has {int(counts.min())} participant(s); training and validation "
+            "cannot both contain it")
+
     k = max(2, int(round(1 / val_fraction)))
-    a, b = next(StratifiedGroupKFold(k, shuffle=True, random_state=seed)
-                .split(pool, y[pool], groups[pool]))
-    return pool[a], pool[b]
+    try:  # the historical fallback, kept whenever its split is valid
+        a, b = next(StratifiedGroupKFold(k, shuffle=True, random_state=seed)
+                    .split(pool, y[pool], groups[pool]))
+        if _two_class_split(pool[a], pool[b], y, groups):
+            return pool[a], pool[b]
+    except ValueError:  # fewer participants than folds
+        pass
+
+    rng = np.random.default_rng(seed)
+    val_people = []
+    for _, members in per_class.groupby(per_class):
+        ids = members.index.to_numpy()
+        n_val = min(max(1, int(round(val_fraction * len(ids)))), len(ids) - 1)
+        val_people.extend(rng.permutation(ids)[:n_val])
+    in_val = np.isin(groups[pool], np.asarray(val_people, dtype=groups.dtype))
+    tr2, va2 = pool[~in_val], pool[in_val]
+    assert _two_class_split(tr2, va2, y, groups)
+    return tr2, va2
 
 
 def assert_disjoint(df: pd.DataFrame, *idx_groups: np.ndarray, group_col: str = "subject_id") -> None:

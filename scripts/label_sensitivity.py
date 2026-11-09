@@ -49,6 +49,8 @@ from pdvoice.data.splits import assign_folds, train_val_test_indices
 from pdvoice.eval.discrimination import auroc
 from pdvoice.models.head import fit_mlp_head
 from pdvoice.preprocess import quality_control
+from pdvoice.data.splits import ensure_two_class_val
+from pdvoice.features.ssl import load_aligned
 from sklearn.model_selection import GroupShuffleSplit
 
 MODEL = "xls-r-300m"
@@ -81,12 +83,13 @@ def load_full(layer):
     if not f.exists():
         raise SystemExit(f"missing {f}\nRun: scripts/extract_mpower_full.py --layer {layer}")
     d = np.load(f, allow_pickle=True)
-    return d["X"].astype(np.float32), d["subject_id"].astype(str), d["label"].astype(int)
+    return (d["X"].astype(np.float32), d["subject_id"].astype(str), d["label"].astype(int),
+            d["path"].astype(str))
 
 
 def build_frame():
     """One row per recording, aligned to the full-cache row order, with demographics."""
-    X15, sids, labels = load_full(TRANSFER_LAYER)
+    X15, sids, labels, _ = load_full(TRANSFER_LAYER)
     df = pd.DataFrame({"subject_id": sids, "label": labels})
     d = pd.read_csv(MPOWER_DIR / "Demographics Survey.csv")
     hc = d["healthCode"].astype(str)
@@ -155,6 +158,7 @@ def within_auroc(sub, X, y, seed):
 def transfer_aurocs(sub, X, y, ext_cache, seed, adapt="none"):
     tr, va = next(GroupShuffleSplit(1, test_size=VAL_FRACTION, random_state=seed)
                   .split(X, y, sub["subject_id"]))
+    tr, va = ensure_two_class_val(tr, va, np.asarray(y), sub["subject_id"].to_numpy(), seed)
     m, vlog = fit_mlp_head(X[tr], y[tr], X[va], y[va], seed=seed)
     _, cal = select_best_by_brier(vlog, y[va])
     dev = next(m.parameters()).device
@@ -191,9 +195,11 @@ def main() -> None:
     wanted = set(args.scenarios.split(","))
 
     df = build_frame()
-    Xw, _, _ = load_full(args.within_layer)
-    Xt, _, _ = load_full(args.transfer_layer)
+    Xw, _, _, pw = load_full(args.within_layer)
+    Xt, _, _, pt = load_full(args.transfer_layer)
+    # the two layers must describe the same recordings in the same order, not just as many
     assert len(Xw) == len(Xt) == len(df), "the two full caches disagree on row count"
+    assert np.array_equal(pw, pt), "the two full caches disagree on recording paths"
 
     ext_cache = []
     for ds, task in EXTERNALS:
@@ -201,8 +207,8 @@ def main() -> None:
         edf = edf[edf["task_kind"] == task].copy()
         edf, _ = quality_control(edf)
         edf = edf.reset_index(drop=True)
-        EX = np.load(EMBEDDINGS / f"{ds}__{MODEL}__{task}__L{args.transfer_layer}.npz")["X"].astype(np.float32)
-        assert len(EX) == len(edf), f"{ds}: {len(EX)} != {len(edf)}"
+        EX = load_aligned(EMBEDDINGS / f"{ds}__{MODEL}__{task}__L{args.transfer_layer}.npz",
+                          edf.path).astype(np.float32)
         ext_cache.append((ds, edf, EX))
     b_edf, b_EX = load_bridge2ai(args.transfer_layer)
     ext_cache.append(("bridge2ai", b_edf, b_EX))

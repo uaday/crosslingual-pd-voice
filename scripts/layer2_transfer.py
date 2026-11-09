@@ -30,6 +30,7 @@ from pdvoice.data import LOADERS
 from pdvoice.data.common_tasks import common_task_mask
 from pdvoice.cohort import age_match_ids, load_mpower_cohort
 from pdvoice.preprocess import WINDOW_MODES, quality_control
+from pdvoice.data.splits import ensure_two_class_val
 
 def _mpower_ceiling(model: str = "xls-r-300m", cap: int = 3, layer=None,
                     window: str = "current") -> float:
@@ -214,6 +215,7 @@ def main() -> None:
     print("[2] Train head on mPower; lock calibration + threshold on val ...")
     gss = GroupShuffleSplit(n_splits=1, test_size=VAL_FRACTION, random_state=SEED)
     tr, va = next(gss.split(Xmp, ymp, mp["subject_id"]))
+    tr, va = ensure_two_class_val(tr, va, ymp, mp["subject_id"].to_numpy(), SEED)
     model, val_logits = fit_mlp_head(Xmp[tr], ymp[tr], Xmp[va], ymp[va])
     cal_name, cal = select_best_by_brier(val_logits, ymp[va])
     thr = youden_threshold(ymp[va], cal.predict_proba(val_logits))

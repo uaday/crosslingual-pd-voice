@@ -1,5 +1,10 @@
 """Generalised cross-dataset transfer: train on ANY dataset+task, test on others.
 
+HISTORICAL. Not the route behind the thesis numbers: those come from
+scripts/unified_experiments.py (see REPRODUCE.md). Kept for exploration; it now applies
+the same cohort rules (shared mPower cohort, binary labels, common speech tasks) and
+refuses embedding caches that cannot be matched to the manifest by recording path.
+
 Dataset-agnostic version of layer2_transfer.py. Trains the
 frozen-XLS-R + head on a chosen source (subject-disjoint train/val, locked calibration),
 reports the within-source 5-fold ceiling, then applies the locked model to a list of
@@ -27,41 +32,39 @@ from sklearn.model_selection import GroupShuffleSplit
 from pdvoice.calibration import select_best_by_brier
 from pdvoice.config import EMBEDDINGS, LOGS, SEED, VAL_FRACTION, ensure_dirs
 from pdvoice.data import LOADERS
-from pdvoice.data.mpower import load_mpower
+from pdvoice.cohort import load_mpower_cohort
+from pdvoice.data.common_tasks import common_task_mask
 from pdvoice.data.splits import assign_folds, train_val_test_indices
 from pdvoice.eval.discrimination import auprc, auroc, bootstrap_ci
 from pdvoice.eval.metrics import calibration_error, sensitivity_at_specificity
 from pdvoice.models.head import fit_mlp_head
 from pdvoice.preprocess import quality_control
+from pdvoice.data.splits import ensure_two_class_val
 
 MODEL, CAP = "xls-r-300m", 3
 
 
 def embed(df, layer, cache_path):
-    """Cached embeddings, row-aligned to ``df``.
+    """Cached embeddings, row-aligned to ``df`` by recording PATH.
 
-    The cache stores the speaker ids alongside X and CHECKS them on load. It used to
-    store X alone and rely on the caller rebuilding the manifest in exactly the same
-    order (filter task, then apply QC, in that order). Row count alone does not catch a
-    reordering, so a stale or differently-built manifest silently paired recordings with
-    other people's embeddings -- which raises nothing and simply returns a plausible
-    wrong number. Older caches have no ids; those fall back to the length check with a
-    warning rather than being silently trusted.
+    Caches carry the path of every row. On load, the rows are matched to the manifest by
+    path (and reordered if the order differs); a cache that lacks paths, or lacks any of
+    the manifest's recordings, is refused. Speaker ids alone, which this function used to
+    check, cannot tell two recordings by the same speaker apart.
     """
     if cache_path.exists():
         d = np.load(cache_path, allow_pickle=True)
-        if d["X"].shape[0] == len(df):
-            if "subject_id" in d.files:
-                cached = d["subject_id"].astype(str)
-                if not np.array_equal(cached, df["subject_id"].to_numpy().astype(str)):
-                    raise SystemExit(
-                        f"{cache_path.name}: speaker ids do not match the manifest.\n"
-                        "The cohort was built differently from when this cache was written. "
-                        "Delete the cache and re-extract rather than trusting it.")
-            else:
-                print(f"      NOTE {cache_path.name} predates id-checking; "
-                      "verified on row count only")
-            return d["X"].astype(np.float32)
+        if "path" not in d.files:
+            raise SystemExit(
+                f"{cache_path.name} has no recording paths, so its rows cannot be matched "
+                "to the manifest. Delete it and re-extract.")
+        row = {q: i for i, q in enumerate(d["path"].astype(str))}
+        missing = [q for q in df["path"].astype(str) if q not in row]
+        if missing:
+            raise SystemExit(
+                f"{cache_path.name}: {len(missing)} manifest recordings are not in the cache "
+                f"(e.g. {missing[0]}). Delete it and re-extract.")
+        return d["X"][[row[q] for q in df["path"].astype(str)]].astype(np.float32)
     from tqdm import tqdm
 
     from pdvoice.features.ssl import DEFAULT_MODELS, _embed_wave, load_encoder
@@ -86,19 +89,29 @@ def embed(df, layer, cache_path):
     return X.astype(np.float32)
 
 
-def get_set(ds, task, layer):
-    if ds == "mpower":
-        df = load_mpower()
-        lab = df[df["label"].isin([0, 1])].sample(frac=1.0, random_state=SEED)
-        df = lab[lab.groupby("subject_id").cumcount().to_numpy() < CAP].reset_index(drop=True)
-        df, _ = quality_control(df); df = df.reset_index(drop=True)
-        cache = EMBEDDINGS / f"mpower_pilot__{MODEL}__cap{CAP}__L{layer}__seed{SEED}.npz"
+def get_set(ds, task, layer, all_groups=False):
+    """Manifest and embeddings for one dataset and task.
+
+    Binary evaluation (the default) keeps PD and control rows only, and for connected
+    speech only the tasks both groups recorded (common_task_mask). ``all_groups=True``
+    is the separate extraction mode that also keeps Bridge2AI's other-disorder rows.
+    """
+    if ds == "mpower":  # the shared cohort: labelled, QC before the cap, with age
+        df = load_mpower_cohort(cap=CAP, seed=SEED)
+        df = df[df["task_kind"] == task].reset_index(drop=True)
+        cache = EMBEDDINGS / f"mpower_cohort__{MODEL}__{task}__cap{CAP}__L{layer}__seed{SEED}.npz"
     else:
         df = LOADERS[ds]()
         df = df[df["task_kind"] == task].copy()
         df, _ = quality_control(df); df = df.reset_index(drop=True)
         cache = EMBEDDINGS / f"{ds}__{MODEL}__{task}__L{layer}.npz"
-    return df, embed(df, layer, cache)
+    X = embed(df, layer, cache)
+    if all_groups:
+        return df, X
+    keep = df["label"].isin([0, 1]).to_numpy() & common_task_mask(df, ds)
+    df = df[keep].reset_index(drop=True)
+    df["label"] = df["label"].astype(int)
+    return df, X[keep]
 
 
 def subj_metrics(df, pr, thr):
@@ -155,6 +168,7 @@ def main():
     print("[lock] train head + calibration ...")
     gss = GroupShuffleSplit(n_splits=1, test_size=VAL_FRACTION, random_state=SEED)
     tr, va = next(gss.split(Xtr, ytr, tdf["subject_id"]))
+    tr, va = ensure_two_class_val(tr, va, ytr, tdf["subject_id"].to_numpy(), SEED)
     head, vlog = fit_mlp_head(Xtr[tr], ytr[tr], Xtr[va], ytr[va])
     _, cal = select_best_by_brier(vlog, ytr[va])
     dev = next(head.parameters()).device

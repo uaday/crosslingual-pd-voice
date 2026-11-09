@@ -92,13 +92,13 @@ def main() -> None:
                 m = (np.ones(len(src), bool) if cohort == "uncorrected"
                      else src.subject_id.isin(age_match_ids(src, seed=seed)).to_numpy())
                 s = src[m]
-                head, cal = train_locked(X[m], s.label.to_numpy(), s.subject_id.to_numpy(), seed)
+                head, cal, tf = train_locked(X[m], s.label.to_numpy(), s.subject_id.to_numpy(), seed)
                 for ds, ttask in targets:
                     if ds == "mpower" and not have_mp:
                         continue
                     if ds == "mpower":
                         tm = mp_df.subject_id.isin(age_match_ids(mp_df, seed=seed)).to_numpy()
-                        p = score(head, cal, mp_X)
+                        p = score(head, cal, tf(mp_X))
                         rows.append(dict(direction="bridge2ai->", task=task, source=cohort, seed=seed,
                                          target="mpower", target_cohort="as published",
                                          auroc=auc(mp_df, p)))
@@ -109,7 +109,7 @@ def main() -> None:
                     edf, E = ext[(ds, ttask)]
                     rows.append(dict(direction="bridge2ai->", task=task, source=cohort, seed=seed,
                                      target=ds, target_cohort="as published",
-                                     auroc=auc(edf, score(head, cal, E))))
+                                     auroc=auc(edf, score(head, cal, tf(E)))))
             print(f"  bridge2ai {task} [{cohort}] done", flush=True)
 
     # ---- into Bridge2AI (vowel), trained on mPower
@@ -119,8 +119,8 @@ def main() -> None:
             m = (np.ones(len(mp_df), bool) if cohort == "uncorrected"
                  else mp_df.subject_id.isin(age_match_ids(mp_df, seed=seed)).to_numpy())
             s = mp_df[m]
-            head, cal = train_locked(mp_X[m], s.label.to_numpy(), s.subject_id.to_numpy(), seed)
-            p = score(head, cal, TX)
+            head, cal, tf = train_locked(mp_X[m], s.label.to_numpy(), s.subject_id.to_numpy(), seed)
+            p = score(head, cal, tf(TX))
             tm = tgt.subject_id.isin(age_match_ids(tgt, seed=seed)).to_numpy()
             for tc, mask in (("as published", np.ones(len(tgt), bool)), ("age-matched", tm)):
                 rows.append(dict(direction="mpower->", task="vowel", source=cohort, seed=seed,

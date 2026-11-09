@@ -26,6 +26,9 @@ import pandas as pd
 
 from pdvoice.config import IPVS_DIR, NEUROVOZ_DIR
 
+# the schema every age table has, including an empty one (metadata absent)
+_AGE_COLUMNS = ["subject_id", "age", "sex"]
+
 _IPVS_SHEETS = [
     ("15 Young Healthy Control", "15 YHC.xlsx"),
     ("22 Elderly Healthy Control", "Tab 3.xlsx"),
@@ -34,7 +37,8 @@ _IPVS_SHEETS = [
 
 
 def neurovoz_ages(root=NEUROVOZ_DIR) -> pd.DataFrame:
-    """subject_id -> age, sex. Returns an empty frame if the metadata is absent."""
+    """subject_id -> age, sex. Returns an empty frame with those columns if the metadata
+    is absent."""
     rows = []
     for status in ("hc", "pd"):
         f = Path(root) / "data" / "metadata" / f"metadata_{status}.csv"
@@ -49,7 +53,7 @@ def neurovoz_ages(root=NEUROVOZ_DIR) -> pd.DataFrame:
             rows.append({"subject_id": f"neurovoz_{status}_{int(r['ID']):04d}",
                          "age": pd.to_numeric(r["Age"], errors="coerce"),
                          "sex": str(r.get("Sex", "")).strip().upper()[:1] or None})
-    return pd.DataFrame(rows).dropna(subset=["age"])
+    return pd.DataFrame(rows, columns=_AGE_COLUMNS).dropna(subset=["age"])
 
 
 def ipvs_ages(root=IPVS_DIR) -> pd.DataFrame:
@@ -74,7 +78,7 @@ def ipvs_ages(root=IPVS_DIR) -> pd.DataFrame:
                 rows.append({"subject_id": f"ipvs_{tag}_{name}_{sur}",
                              "age": pd.to_numeric(r["age"], errors="coerce"),
                              "sex": str(r.get("sex", "")).strip().upper()[:1] or None})
-    return pd.DataFrame(rows).dropna(subset=["age"])
+    return pd.DataFrame(rows, columns=_AGE_COLUMNS).dropna(subset=["age"])
 
 
 def _name_key(subject_id: str) -> str:
