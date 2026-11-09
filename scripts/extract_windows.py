@@ -81,8 +81,10 @@ def load_model(key: str):
     from transformers import AutoFeatureExtractor, AutoModel
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    extractor = AutoFeatureExtractor.from_pretrained(MODELS[key])
-    model = AutoModel.from_pretrained(MODELS[key]).to(device).eval()
+    from pdvoice.features.ssl import REVISIONS
+    rev = REVISIONS.get(MODELS[key])
+    extractor = AutoFeatureExtractor.from_pretrained(MODELS[key], revision=rev)
+    model = AutoModel.from_pretrained(MODELS[key], revision=rev).to(device).eval()
     return model, extractor, device
 
 

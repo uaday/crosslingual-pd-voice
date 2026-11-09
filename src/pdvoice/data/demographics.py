@@ -21,6 +21,7 @@ import re
 import warnings
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from pdvoice.config import IPVS_DIR, NEUROVOZ_DIR
@@ -81,29 +82,49 @@ def _name_key(subject_id: str) -> str:
 
     The manifest builds ids from folder names and the spreadsheets from typed columns,
     so the two disagree on case, spacing and -- for patients -- an embedded batch folder
-    (``ipvs_pd_1_5_Name_C``). Drop the ``ipvs_<group>`` prefix and any numeric batch
-    parts, then strip everything that is not a letter or digit. Raw string equality
-    matches 14 of 65 speakers; this matches 60.
+    (``ipvs_pd_1_5_Name_C``). Drop the ``ipvs`` prefix and any numeric batch parts, then
+    strip everything that is not a letter or digit. Raw string equality matches 14 of 65
+    speakers.
+
+    The GROUP (``pd``, ``ehc``, ``yhc``) is kept in the key. Folder names hold only a
+    first name and a surname initial, so different people collide: without the group,
+    an elderly control was given the age of a patient with the same short name
+    (corrected 2026-11-10).
     """
+    group = subject_id.split("_")[1]
     parts = [x for x in subject_id.split("_")[2:] if not x.isdigit()]
-    return re.sub(r"[^a-z0-9]", "", "".join(parts).lower())
+    return group + ":" + re.sub(r"[^a-z0-9]", "", "".join(parts).lower())
+
+
+def _resolve(t: pd.DataFrame, key: str) -> tuple[pd.DataFrame, list[str]]:
+    """One row per key. Keys whose rows disagree on age or sex are REJECTED (age and sex
+    set to NaN) instead of silently keeping the first row; returns the rejected keys."""
+    agree = t.groupby(key).agg(n_age=("age", "nunique"), n_sex=("sex", "nunique"))
+    bad = agree.index[(agree.n_age > 1) | (agree.n_sex > 1)].tolist()
+    t = t.drop_duplicates(key).set_index(key)
+    t.loc[t.index.isin(bad), ["age", "sex"]] = np.nan
+    return t, bad
 
 
 def attach_age(df: pd.DataFrame, dataset: str) -> pd.DataFrame:
-    """Add ``age`` and ``sex`` columns to a manifest. NaN where unknown."""
+    """Add ``age`` and ``sex`` columns to a manifest. NaN where unknown or ambiguous."""
     table = {"neurovoz": neurovoz_ages, "ipvs": ipvs_ages}.get(dataset)
     out = df.copy()
     if table is None:                       # mdvr_kcl, and anything else without demographics
         out["age"] = pd.NA
         out["sex"] = pd.NA
         return out
-    t = table().drop_duplicates("subject_id")
+    t = table().drop_duplicates()
     if dataset == "ipvs":
-        t = t.assign(_k=t.subject_id.map(_name_key)).drop_duplicates("_k").set_index("_k")
+        t, bad = _resolve(t.assign(_k=t.subject_id.map(_name_key)), "_k")
         k = out["subject_id"].map(_name_key)
     else:
-        t = t.set_index("subject_id")
+        t, bad = _resolve(t, "subject_id")
         k = out["subject_id"]
+    if bad:
+        n = int(k.isin(bad).groupby(out["subject_id"]).any().sum())
+        warnings.warn(f"{dataset}: {len(bad)} demographic key(s) with conflicting age/sex "
+                      f"rows; age and sex left unknown for the {n} participant(s) they match")
     out["age"] = k.map(t["age"])
     out["sex"] = k.map(t["sex"])
     return out

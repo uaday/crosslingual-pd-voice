@@ -55,12 +55,14 @@ def load_model(key):
 
     mid = MODELS[key]
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    extractor = AutoFeatureExtractor.from_pretrained(mid)
+    from pdvoice.features.ssl import REVISIONS
+    rev = REVISIONS.get(mid)
+    extractor = AutoFeatureExtractor.from_pretrained(mid, revision=rev)
     if key.startswith("whisper"):
         from transformers import WhisperModel
-        model = WhisperModel.from_pretrained(mid).encoder.to(device).eval()
+        model = WhisperModel.from_pretrained(mid, revision=rev).encoder.to(device).eval()
     else:
-        model = AutoModel.from_pretrained(mid).to(device).eval()
+        model = AutoModel.from_pretrained(mid, revision=rev).to(device).eval()
     return model, extractor, device
 
 

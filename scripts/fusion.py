@@ -159,6 +159,16 @@ def pairwise_tests(preds):
 
 
 def main():
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--drop", default="", help="comma-separated classical features to leave "
+                    "out, as a sensitivity check (e.g. mfcc_0, the one level-dependent "
+                    "feature); writes fusion__...__no_<features>.json and no prediction files")
+    args = ap.parse_args()
+    global FEATS
+    drop = [f for f in args.drop.split(",") if f]
+    FEATS = [f for f in FEATURE_NAMES if f not in drop]
+    tag = ("__no_" + "_".join(drop)) if drop else ""
     print(f"=== Fusion: SSL + classical (mPower vowel, cap-1, XLS-R L{LAYER}) ===")
     df, S = build_cohort()
 
@@ -186,7 +196,8 @@ def main():
             a, lo, hi, ap, g = within_cv(df[mask].reset_index(drop=True), X[mask], y[mask],
                                        cols[name])
             results["scenarios"][scen][name] = {"auroc": a, "auroc_ci": [lo, hi], "auprc": ap}
-            g.to_csv(LOGS / f"fusion_preds__{scen}__{name.replace('-', '_')}.csv", index=False)
+            if not tag:  # the sensitivity run must not overwrite the main predictions
+                g.to_csv(LOGS / f"fusion_preds__{scen}__{name.replace('-', '_')}.csv", index=False)
             preds[name] = g
             star = "  <<<" if name == "FUSION" else ""
             print(f"  {scen:<13}{name:<16}{a:.3f} [{lo:.3f},{hi:.3f}]      {ap:.3f}{star}")
@@ -199,7 +210,8 @@ def main():
                   f"{t['p_bootstrap']:>9.3f}{verdict}")
         print()
 
-    (LOGS / f"fusion__xls-r-300m__L{LAYER}.json").write_text(json.dumps(results, indent=2))
+    results["dropped_features"] = drop
+    (LOGS / f"fusion__xls-r-300m__L{LAYER}{tag}.json").write_text(json.dumps(results, indent=2))
     print("wrote fusion json")
 
 

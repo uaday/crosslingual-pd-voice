@@ -51,13 +51,31 @@ def sensitivity_at_specificity(y, p, target_spec: float = 0.90) -> dict:
 
 
 def calibration_error(y, p, n_bins: int = ECE_BINS) -> dict:
-    """Expected and Maximum Calibration Error over equal-frequency bins."""
+    """Expected and Maximum Calibration Error over equal-frequency bins, ties kept together.
+
+    Participants are sorted by predicted probability and cut into ``n_bins`` bins of
+    (nearly) equal size, except that a cut never separates participants with the SAME
+    probability: each cut moves forward to the end of its run of ties. Before 2026-11-09
+    the cuts fell at fixed row positions, so a run of identical probabilities could be
+    split across bins with different label mixes, and the error then depended on the
+    arbitrary order within the tie. With every participant at one probability the
+    result is now simply |observed rate - predicted probability|.
+    """
     y = np.asarray(y, dtype=float)
     p = np.asarray(p, dtype=float)
-    order = np.argsort(p)
+    order = np.argsort(p, kind="stable")
     y, p = y[order], p[order]
+    n = len(p)
+    cuts = []
+    # start from the same boundaries as np.array_split, so untied data bin exactly as before
+    for c in np.cumsum([len(b) for b in np.array_split(np.arange(n), n_bins)])[:-1]:
+        c = int(c)
+        while 0 < c < n and p[c - 1] == p[c]:
+            c += 1
+        if 0 < c < n and (not cuts or c > cuts[-1]):
+            cuts.append(c)
     ece, mce = 0.0, 0.0
-    for b in np.array_split(np.arange(len(p)), n_bins):
+    for b in np.split(np.arange(n), cuts):
         if len(b) == 0:
             continue
         gap = abs(y[b].mean() - p[b].mean())

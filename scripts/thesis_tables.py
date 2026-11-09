@@ -258,12 +258,19 @@ def t_significance() -> None:
             v = t[k]
             fmt = lambda x: f"{x:.4f}"
             hd = dc["holm"][coh][k]["p_delong"]["holm"]
-            dk = {"SSL-only vs classical-only": "SSL_only - classical_only",
-                  "SSL-only vs FUSION": "FUSION - SSL_only",
-                  "classical-only vs FUSION": "FUSION - classical_only"}[k]
-            diff = (f"{dc['feature_sets'][dk]['delta']:+.3f} [{dc['feature_sets'][dk]['ci95'][0]:+.3f}, "
-                    f"{dc['feature_sets'][dk]['ci95'][1]:+.3f}]") if coh == "age-matched" else \
-                   f"{abs(v['delta']):.3f}"
+            # One convention throughout: first-named minus second-named. difference_cis
+            # stores two of the three as FUSION minus the other, so those are negated
+            # (with the interval endpoints swapped). The uncorrected delta from fusion.py
+            # is already first minus second; it used to be printed as abs(), losing the sign.
+            dk, sgn = {"SSL-only vs classical-only": ("SSL_only - classical_only", 1),
+                       "SSL-only vs FUSION": ("FUSION - SSL_only", -1),
+                       "classical-only vs FUSION": ("FUSION - classical_only", -1)}[k]
+            if coh == "age-matched":
+                fs = dc["feature_sets"][dk]
+                lo, hi = sorted(sgn * x for x in fs["ci95"])
+                diff = f"{sgn * fs['delta']:+.3f} [{lo:+.3f}, {hi:+.3f}]"
+            else:
+                diff = f"{v['delta']:+.3f}"
             rows.append([label, name, diff, fmt(v["p_delong"]), f"{hd:.3f}",
                          f"{v['p_bootstrap']:.3f}", fmt(v["p_mcnemar"])])
     _w("t4_4_significance.tex",
@@ -273,6 +280,7 @@ def t_significance() -> None:
        "Paired significance tests between feature sets, on the same subjects and splits.",
        "tab:significance",
        "Framework head, one recording per participant, layer 11, one seed. "
+       "$\\Delta$ AUROC is the first-named model minus the second. "
        "The last four columns are $p$ values. "
        "DeLong and the paired bootstrap compare ranking; McNemar compares the decisions "
        "made at each model's operating threshold. Holm: DeLong $p$ adjusted within each "

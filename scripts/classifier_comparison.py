@@ -72,9 +72,9 @@ def cv_scores(X, y, groups, clf_name, seed, n_splits=5):
             # carve a validation slice out of train, as the real pipeline does
             inner = StratifiedKFold(5, shuffle=True, random_state=seed)
             tr2, va = next(inner.split(X[tr], y[tr]))
-            # column medians from the TRAINING rows only (this used to be one median of
-            # the whole matrix, test rows included)
-            med = np.nanmedian(X[tr], axis=0)
+            # column medians from the rows the head is FITTED on (tr2) only; this used to be
+            # one median of the whole matrix, test rows included
+            med = np.nanmedian(X[tr][tr2], axis=0)
             Xi = np.where(np.isnan(X), med, X).astype(np.float32)
             m, _ = fit_mlp_head(Xi[tr][tr2], y[tr][tr2], Xi[tr][va], y[tr][va], seed=seed)
             dev = next(m.parameters()).device
