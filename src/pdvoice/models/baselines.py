@@ -16,14 +16,16 @@ def sklearn_baseline(name: str = "svm", **kwargs):
     from sklearn.preprocessing import StandardScaler
     from sklearn.svm import SVC
 
-    models = {
-        "svm": SVC(probability=True, kernel="rbf", **kwargs),
-        "rf": RandomForestClassifier(n_estimators=300, n_jobs=-1, **kwargs),
-        "gbt": GradientBoostingClassifier(**kwargs),
+    # Builders, not instances: only the chosen estimator is constructed, so its own
+    # keyword arguments (e.g. C for the SVM) never reach the others.
+    builders = {
+        "svm": lambda: SVC(**{"probability": True, "kernel": "rbf", **kwargs}),
+        "rf": lambda: RandomForestClassifier(**{"n_estimators": 300, "n_jobs": -1, **kwargs}),
+        "gbt": lambda: GradientBoostingClassifier(**kwargs),
     }
-    if name not in models:
-        raise ValueError(f"unknown baseline '{name}' (choose from {list(models)})")
-    return make_pipeline(StandardScaler(), models[name])
+    if name not in builders:
+        raise ValueError(f"unknown baseline '{name}' (choose from {list(builders)})")
+    return make_pipeline(StandardScaler(), builders[name]())
 
 
 def build_logmel_cnn(n_mels: int = 64, n_classes: int = 1):

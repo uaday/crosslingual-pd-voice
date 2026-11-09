@@ -29,13 +29,16 @@ Voice-activity detection: `silero-vad` 6.2.1. Acoustic features: `praat-parselmo
 
 ```
 python -m venv .venv
+.venv\Scripts\python.exe -m pip install torch==2.5.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cu121
+.venv\Scripts\python.exe -m pip install -r env\requirements-gpu.txt
 .venv\Scripts\python.exe -m pip install -e .
-.venv\Scripts\python.exe -m pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cu121
-.venv\Scripts\python.exe -m pip install transformers==4.46.3 librosa soundfile audioread praat-parselmouth silero-vad statsmodels matplotlib tqdm "keras>=3.6" "ml-dtypes<0.5" synapseclient pytest
 ```
 
-- Versions used for the thesis: torch 2.5.1+cu121, transformers 4.46.3, scikit-learn 1.9.0,
-  numpy 1.26.4 (must stay below 2.0), pandas 3.0.5, scipy 1.17.1, synapseclient 4.14.0.
+  (`make env` runs the same commands; on Linux/macOS use `.venv/bin/python`.)
+- `env/requirements-gpu.txt` pins the exact versions used for the thesis (Python 3.12,
+  torch 2.5.1+cu121, transformers 4.46.3, scikit-learn 1.9.0, numpy 1.26.4, pandas 3.0.5,
+  scipy 1.17.1). Keep scikit-learn at 1.9.0: its participant splits differ between
+  versions, so another version gives different numbers.
 - Check the installation: `.venv\Scripts\python.exe -m pytest -q tests`.
 
 All commands below are run from the project root with
@@ -83,11 +86,15 @@ seeds (42 to 46); 1,000 bootstrap resamples.
 1. **Embeddings.** `extract_mpower_full.py` (mPower, all layers needed), `extract_all_layers.py`
    and `extract_windows.py` (layer sweeps and window variants), `slice_windows.py`.
    External datasets and Bridge2AI are extracted on first use by `transfer_any.get_set`
-   (for Bridge2AI: `get_set("bridge2ai", task, 15)` for `vowel`, `ddk` and `speech`).
-   Caches go to `data/embeddings/` and store speaker ids, which are checked on load.
+   (for Bridge2AI: `get_set("bridge2ai", task, 15, all_groups=True)` for `vowel`, `ddk`
+   and `speech`; extraction always covers every group). Caches go to `data/embeddings/`
+   and store the path of every recording; every loader matches rows to the manifest by
+   path and refuses a cache without paths.
 2. **Experiments.** `unified_experiments.py` runs every Chapter 4 experiment under one
    protocol and writes `outputs/logs/unified/`; the scripts in the tables below produce the
-   remaining results. Results go to `outputs/logs/`.
+   remaining results. Results go to `outputs/logs/`. To rerun the analyses changed by the
+   2026-11-09 audit in dependency order, use `run_audit_fixes.py`, which stops at the
+   first failed step.
 3. **Tables and figures:** `unified_tables.py`, `thesis_tables.py`, `thesis_figures.py`.
 
 ## 5. Where each result comes from
@@ -119,18 +126,25 @@ seeds (42 to 46); 1,000 bootstrap resamples.
 | Centroid correction | `centroid_confound_test.py` |
 | Classical branch under transfer | `classical_transfer.py` |
 | Fusion of classical and SSL features | `fusion.py` |
-| Design B (speech between clinical datasets) | `transfer_any.py --train <dataset>:speech --tests ...` |
+| Design B (speech between clinical datasets) | `unified_experiments.py` (Experiment 2) |
 | Speech transfer under age matching (three-arm) | `speech_agematch.py` |
 | Whole recording against fixed windows | `extract_windows.py`, then the windowing grid via `transfer_any.py` |
 | IPVS inversion | `ipvs_inversion.py` |
 | Vowel phoneme control | `vowel_phoneme_control.py` |
 | Bridge2AI within-dataset, before and after age matching | `bridge2ai_agematch.py --n-perm 200` |
-| Bridge2AI transfer (Designs C and D) | `bridge2ai_transfer.py`, then `bridge2ai_transfer_agecheck.py` |
-| Read against spontaneous speech, age and sex matching, PD against other disorders | `bridge2ai_followups.py` |
+| Bridge2AI transfer (Designs C and D) | `unified_experiments.py` (Experiments 1 and 2) |
+| Parkinson's disease against other voice disorders (Bridge2AI) | `unified_experiments.py` (specificity part) |
 | Embedding probes (what the vector encodes) | `embedding_probes.py` |
 | Calibration and objective function | `objective_function.py` |
 | Decision curves | `decision_curves.py` |
-| Scaled age-matched model | `scaleup_agematched.py` |
+
+### Historical scripts (not behind any thesis number)
+
+`transfer_any.py` (the earlier any-to-any transfer, single seed, layer 15),
+`scaleup_agematched.py` (the scaled age-matched model) and the earlier Bridge2AI scripts
+`bridge2ai_transfer.py`, `bridge2ai_transfer_agecheck.py` and `bridge2ai_followups.py`
+(single layer, set by `PDV_LAYER`) were superseded by `unified_experiments.py`. They still run, with the same cohort and cache-identity rules,
+but their outputs are not read by the thesis tables or the number check.
 
 ## 6. Notes
 

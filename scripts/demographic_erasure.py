@@ -49,6 +49,8 @@ from pdvoice.data import LOADERS
 from pdvoice.eval.discrimination import auroc
 from pdvoice.models.head import fit_mlp_head
 from pdvoice.preprocess import quality_control
+from pdvoice.data.splits import ensure_two_class_val
+from pdvoice.features.ssl import load_aligned
 
 MODEL = "xls-r-300m"
 LAYER = int(os.environ.get("PDV_LAYER", 15))
@@ -91,11 +93,9 @@ def load_external(ds, task):
     edf = edf[edf.task_kind == task].copy()
     edf, _ = quality_control(edf)
     edf = edf.reset_index(drop=True)
-    z = np.load(EMBEDDINGS / f"{ds}__{MODEL}__{task}__L{LAYER}.npz", allow_pickle=True)
-    E = z["X"].astype(np.float32)
-    assert len(E) == len(edf), f"{ds}: {len(E)} != {len(edf)}"
-    if "path" in z:  # recording-level identity, not just the row count
-        assert list(z["path"].astype(str)) == edf.path.astype(str).tolist(), f"{ds}: cache order"
+    # recording-level identity, required: a cache without paths is refused
+    E = load_aligned(EMBEDDINGS / f"{ds}__{MODEL}__{task}__L{LAYER}.npz",
+                     edf.path).astype(np.float32)
     return edf, E
 
 
@@ -105,6 +105,7 @@ def train_locked(X, y, groups, seed, erase_df=None):
     fitted on the whole source cohort, validation rows included. Returns the transform
     to apply to external data as well."""
     tr, va = next(GroupShuffleSplit(1, test_size=VAL_FRACTION, random_state=seed).split(X, y, groups))
+    tr, va = ensure_two_class_val(tr, va, np.asarray(y), np.asarray(groups), seed)
     tf = (lambda E: E)
     if erase_df is not None:
         tf = LeaceEraser().fit(X[tr], concept(erase_df.iloc[tr])).transform

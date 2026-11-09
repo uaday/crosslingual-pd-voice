@@ -59,10 +59,10 @@ def main() -> None:
                 m = (np.ones(len(src), bool) if cohort == "uncorrected"
                      else src.subject_id.isin(age_match_ids(src, seed=seed)).to_numpy())
                 s = src[m]
-                head, cal = train_locked(X[m], s.label.to_numpy(), s.subject_id.to_numpy(), seed)
+                head, cal, tf = train_locked(X[m], s.label.to_numpy(), s.subject_id.to_numpy(), seed)
                 for ds, tt in targets:
                     edf, E = ext[(ds, tt)]
-                    p = score(head, cal, E)
+                    p = score(head, cal, tf(E))
                     for name, mask in subsets(ds, edf, seed).items():
                         sub = edf[mask]
                         rows.append(dict(task=task, target=ds, target_subset=name, source=cohort,

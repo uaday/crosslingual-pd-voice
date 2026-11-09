@@ -34,6 +34,7 @@ from pdvoice.data import LOADERS
 from pdvoice.eval.discrimination import auroc, bootstrap_ci
 from pdvoice.models.head import fit_mlp_head
 from pdvoice.preprocess import quality_control
+from pdvoice.data.splits import ensure_two_class_val
 from sklearn.model_selection import GroupShuffleSplit
 
 MODEL, LAYER = "xls-r-300m", 15
@@ -83,6 +84,7 @@ def main() -> None:
         y = sub.label.to_numpy()
         tr, va = next(GroupShuffleSplit(1, test_size=VAL_FRACTION, random_state=seed)
                       .split(X, y, sub.subject_id))
+        tr, va = ensure_two_class_val(tr, va, np.asarray(y), sub.subject_id.to_numpy(), seed)
         head, vlog = fit_mlp_head(X[tr], y[tr], X[va], y[va], seed=seed)
         _, cal = select_best_by_brier(vlog, y[va])
         dev = next(head.parameters()).device

@@ -45,6 +45,7 @@ from pdvoice.eval.metrics import calibration_error, sensitivity_at_specificity, 
 from pdvoice.features.classical import FEATURE_NAMES, FEATURE_VERSION, classical_features
 from pdvoice.models.head import fit_mlp_head
 from pdvoice.preprocess import quality_control
+from pdvoice.data.splits import ensure_two_class_val
 
 VOWEL_EXTERNALS = ("ipvs", "neurovoz")
 
@@ -89,7 +90,9 @@ def subject_level(ids, y, pr) -> pd.DataFrame:
 
 
 def evaluate(y, p, thr, r) -> dict:
-    # discrimination on the uncalibrated score r; calibration/threshold on p
+    """Discrimination (AUROC, AUPRC, sensitivity at 90% specificity) on the ranking score
+    r; calibration on the probability p; decisions are p >= thr, where thr is one value
+    or one per participant (its own fold's validation threshold, possibly infinite)."""
     lo, hi = bootstrap_ci(y, r)[1:]
     m = {"n_subjects": int(len(y)), "prevalence": round(float(np.mean(y)), 4),
          "auroc": round(float(auroc(y, r)), 4), "auroc_ci": [round(lo, 4), round(hi, 4)],
@@ -97,7 +100,7 @@ def evaluate(y, p, thr, r) -> dict:
     m.update({k: round(float(v), 4) for k, v in calibration_error(y, p).items()})
     m.update({k: (round(float(v), 4) if isinstance(v, float) else v)
               for k, v in threshold_metrics(y, p, thr).items()})
-    m["sens_at_90spec"] = round(float(sensitivity_at_specificity(y, p)["sensitivity"]), 4)
+    m["sens_at_90spec"] = round(float(sensitivity_at_specificity(y, r)["sensitivity"]), 4)
     # NPV is not emitted by threshold_metrics but is recoverable from the matrix.
     tn, fn = m["tn"], m["fn"]
     m["npv"] = round(tn / (tn + fn), 4) if (tn + fn) else 0.0
@@ -116,6 +119,7 @@ def fit_locked_head(X, y, groups, seed=SEED):
     """Imputer/scaler, head, calibrator and threshold, all fitted without test data."""
     tr, va = next(GroupShuffleSplit(1, test_size=VAL_FRACTION, random_state=seed)
                   .split(X, y, groups))
+    tr, va = ensure_two_class_val(tr, va, np.asarray(y), np.asarray(groups), seed)
     prep = fit_prep(X[tr])
     head, vlog = fit_mlp_head(prep(X[tr]), y[tr], prep(X[va]), y[va], seed=seed)
     cal_name, cal = select_best_by_brier(vlog, y[va])
@@ -150,14 +154,10 @@ def within_cv(sub, X, y, seed=SEED):
                                    "p": p, "r": r, "thr": thr}))
     g = (pd.concat(parts).groupby("subject_id")
          .agg(y=("y", "first"), p=("p", "mean"), r=("r", "mean"), thr=("thr", "first")))
-    yy, pp, rr = g.y.to_numpy(), g.p.to_numpy(), g.r.to_numpy()
-    m = evaluate(yy, pp, 0.5, rr)
-    # threshold measures at each participant's own fold threshold: p >= thr  <=>  p - thr + 0.5 >= 0.5
-    shifted = evaluate(yy, pp - g.thr.to_numpy() + 0.5, 0.5, rr)
-    for k in ("accuracy", "sensitivity", "specificity", "ppv", "f1", "tn", "fp", "fn", "tp",
-              "balanced_accuracy", "npv"):
-        if k in shifted:
-            m[k] = shifted[k]
+    # Each participant is decided at its own fold's validation threshold (p >= thr). This
+    # used to shift p by the threshold and send the shifted values through calibration,
+    # which failed with an infinite (all-negative) Youden threshold.
+    m = evaluate(g.y.to_numpy(), g.p.to_numpy(), g.thr.to_numpy(), g.r.to_numpy())
     m["threshold"] = "per fold (validation Youden)"
     return m
 

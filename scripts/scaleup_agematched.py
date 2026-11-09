@@ -39,6 +39,8 @@ from pdvoice.eval.metrics import (calibration_error, sensitivity_at_specificity,
                                   threshold_metrics, youden_threshold)
 from pdvoice.models.head import fit_mlp_head
 from pdvoice.preprocess import quality_control
+from pdvoice.data.splits import ensure_two_class_val
+from pdvoice.features.ssl import load_aligned
 from sklearn.model_selection import GroupShuffleSplit
 
 MODEL, LAYER = "xls-r-300m", 15
@@ -116,6 +118,7 @@ def run_seed(df, X, cap, seed, conv, save_model=False):
     # ---- locked model -> externals ----
     tr, va = next(GroupShuffleSplit(1, test_size=VAL_FRACTION, random_state=seed)
                   .split(Xa, y, am.subject_id))
+    tr, va = ensure_two_class_val(tr, va, np.asarray(y), am.subject_id.to_numpy(), seed)
     head, vlog = fit_mlp_head(Xa[tr], y[tr], Xa[va], y[va], seed=seed)
     conv.append({"seed": seed, "phase": "locked", "epochs": head._epochs_run,
                  "early_stopped": head._stopped_early})
@@ -142,8 +145,8 @@ def run_seed(df, X, cap, seed, conv, save_model=False):
         edf = LOADERS[ds]()
         edf = edf[edf.task_kind == task].copy()
         edf, _ = quality_control(edf); edf = edf.reset_index(drop=True)
-        EX = np.load(EMBEDDINGS / f"{ds}__{MODEL}__{task}__L{LAYER}.npz")["X"].astype(np.float32)
-        assert len(EX) == len(edf), f"{ds}: {len(EX)} != {len(edf)}"
+        EX = load_aligned(EMBEDDINGS / f"{ds}__{MODEL}__{task}__L{LAYER}.npz",
+                          edf.path).astype(np.float32)
         with torch.no_grad():
             lg = head(torch.tensor(EX, dtype=torch.float32, device=dev)).squeeze(-1).cpu().numpy()
         s = pd.DataFrame({"s": edf.subject_id, "y": edf.label.astype(int),

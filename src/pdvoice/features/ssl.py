@@ -130,3 +130,22 @@ def extract_for_manifest(
         cache_path.parent.mkdir(parents=True, exist_ok=True)
         np.savez_compressed(cache_path, X=X, ids=ids, path=paths)
     return X, ids
+
+
+def load_aligned(cache_path, paths, key="X"):
+    """Rows of a cached embedding file, matched to ``paths`` by recording path.
+
+    The cache must store a ``path`` array. Rows are returned in the order of ``paths``
+    (reordered if needed). A cache without paths, or one missing any requested recording,
+    raises ValueError: a row count or speaker sequence cannot tell two recordings apart.
+    """
+    d = np.load(cache_path, allow_pickle=True)
+    if "path" not in d.files:
+        raise ValueError(f"{cache_path} has no recording paths; re-extract it")
+    row = {q: i for i, q in enumerate(d["path"].astype(str))}
+    want = [str(q) for q in paths]
+    missing = [q for q in want if q not in row]
+    if missing:
+        raise ValueError(f"{cache_path}: {len(missing)} requested recordings "
+                         f"are not in the cache (e.g. {missing[0]})")
+    return d[key][[row[q] for q in want]]

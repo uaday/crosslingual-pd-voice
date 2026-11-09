@@ -114,12 +114,12 @@ def transfer(df, X, matcher, targets, ext):
     for seed in SEEDS:
         m = df.subject_id.isin(matcher(df, seed)).to_numpy()
         s = df[m]
-        head, cal = train_locked(X[m], s.label.to_numpy(), s.subject_id.to_numpy(), seed)
+        head, cal, tf = train_locked(X[m], s.label.to_numpy(), s.subject_id.to_numpy(), seed)
         for ds, task, subset in targets:
             edf, E = ext[(ds, task)]
             mask = subsets(ds, edf, seed)[subset]
             res.setdefault(f"{ds} {task} ({subset})", []).append(
-                auc(edf[mask], score(head, cal, E)[mask]))
+                auc(edf[mask], score(head, cal, tf(E))[mask]))
     return {k: [round(float(np.mean(v)), 3), round(float(np.std(v, ddof=1)), 3)] for k, v in res.items()}
 
 

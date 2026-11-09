@@ -13,9 +13,18 @@ help:
 	@echo "  format    - black + ruff --fix"
 	@echo "  clean     - remove caches and build artifacts"
 
+# Windows venvs put the interpreter in Scripts/, Linux/macOS in bin/.
+ifeq ($(OS),Windows_NT)
+VENV_PY := .venv/Scripts/python.exe
+else
+VENV_PY := .venv/bin/python
+endif
+
 env:
 	python -m venv .venv
-	.venv/Scripts/python -m pip install -r env/requirements-gpu.txt
+	$(VENV_PY) -m pip install torch==2.5.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cu121
+	$(VENV_PY) -m pip install -r env/requirements-gpu.txt
+	$(VENV_PY) -m pip install -e .
 
 install:
 	pip install -e .
