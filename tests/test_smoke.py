@@ -147,7 +147,8 @@ def test_bridge2ai_loader():
 
     p = bridge2ai_participants()
     assert p.participant_id.is_unique
-    assert set(p.group) <= {"pd", "control", "other", "ambiguous", "control_voice_condition"}
+    assert set(p.group) <= {"pd", "control", "other", "ambiguous", "control_voice_condition",
+                            "control_with_diagnosis", "pd_non_us"}
     assert (p.label.notna() == p.group.isin(["pd", "control"])).all()
     df = load_bridge2ai()
     assert len(df) > 0

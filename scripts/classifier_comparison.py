@@ -72,7 +72,10 @@ def cv_scores(X, y, groups, clf_name, seed, n_splits=5):
             # carve a validation slice out of train, as the real pipeline does
             inner = StratifiedKFold(5, shuffle=True, random_state=seed)
             tr2, va = next(inner.split(X[tr], y[tr]))
-            Xi = np.nan_to_num(X, nan=np.nanmedian(X))
+            # column medians from the TRAINING rows only (this used to be one median of
+            # the whole matrix, test rows included)
+            med = np.nanmedian(X[tr], axis=0)
+            Xi = np.where(np.isnan(X), med, X).astype(np.float32)
             m, _ = fit_mlp_head(Xi[tr][tr2], y[tr][tr2], Xi[tr][va], y[tr][va], seed=seed)
             dev = next(m.parameters()).device
             with torch.no_grad():
@@ -92,17 +95,23 @@ def main() -> None:
 
     # ---- SSL embeddings, one recording per subject ----
     d = np.load(EMBEDDINGS / f"mpower_full__{MODEL}__L{LAYER}.npz", allow_pickle=True)
-    emb = pd.DataFrame({"subject_id": d["subject_id"].astype(str), "label": d["label"].astype(int)})
+    emb = pd.DataFrame({"subject_id": d["subject_id"].astype(str), "path": d["path"].astype(str),
+                        "label": d["label"].astype(int)})
     emb["row"] = np.arange(len(emb))
-    one = emb.sample(frac=1.0, random_state=args.seed).drop_duplicates("subject_id")
 
-    # ---- classical features (already subject-level, cap-1) + age ----
+    # ---- classical features (cap-1 shared cohort, one recording per subject) + age ----
+    # Joined on the RECORDING PATH, so the SSL row and the classical row describe the same
+    # audio. (This used to draw its own random recording per subject for the SSL arm and
+    # join on subject_id, which could pair two different recordings of one person.)
     cf = pd.read_csv(LOGS / "classical_features_labeled__cap1.csv")
+    if "path" not in cf.columns:
+        raise SystemExit("classical CSV has no path column; re-run classical_baseline.py --cap 1")
     demo = pd.read_csv(MPOWER_DIR / "Demographics Survey.csv")
     age = dict(zip(demo.healthCode.astype(str), demo.age))
-    one["age"] = one.subject_id.str.replace("mpower_", "", regex=False).map(age)
+    emb["age"] = emb.subject_id.str.replace("mpower_", "", regex=False).map(age)
 
-    merged = one.merge(cf[["subject_id"] + FEATS], on="subject_id", how="inner")
+    merged = emb.merge(cf[["path"] + FEATS], on="path", how="inner").reset_index(drop=True)
+    assert merged.subject_id.is_unique, "expected one recording per subject"
     print(f"subjects with BOTH SSL embedding and classical features: {len(merged):,}")
 
     X_ssl = d["X"][merged.row.to_numpy()].astype(np.float32)

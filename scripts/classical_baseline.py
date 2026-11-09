@@ -5,8 +5,8 @@ mPower vowel cohort used for the SSL runs, trains SVM + Random Forest with
 subject-disjoint 5-fold CV, and reports subject-level AUROC — head-to-head with the
 frozen-XLS-R numbers. Classical features are vowel-specific.
 
-Speed: features are computed on the 2 s stable vowel core (same segment the SSL path
-uses), which makes Praat ~5x faster than on the full 10 s file. Cached to parquet.
+Features are computed on the central 2 s of the trimmed vowel, the same segment of the
+same recordings the SSL path uses. Cached to CSV with the recording paths.
 
 Run:  python scripts/classical_baseline.py --cap 3
 """
@@ -20,44 +20,38 @@ import warnings
 import numpy as np
 import pandas as pd
 
-from pdvoice.config import EMBEDDINGS, MPOWER_DIR, SEED
-from pdvoice.data.mpower import load_mpower
+from pdvoice.config import EMBEDDINGS, SEED
 from pdvoice.data.splits import assign_folds
 from pdvoice.eval.discrimination import auprc, auroc, bootstrap_ci
-from pdvoice.preprocess import quality_control
-from pdvoice.cohort import age_match_ids
-from pdvoice.features.classical import FEATURE_NAMES, classical_features
-from pdvoice.utils.audio import load_audio, stable_core, trim_silence
+from pdvoice.cohort import age_match_ids, load_mpower_cohort
+from pdvoice.features.classical import FEATURE_NAMES, FEATURE_VERSION, classical_features
 
 warnings.filterwarnings("ignore")
-PRAAT_SR = 44100
 # feature list and extractor both live in the package now -- see features/classical.py
 FEATS = FEATURE_NAMES
 
 
 def build_cohort(cap):
-    df = load_mpower()
-    lab = df[df["label"].isin([0, 1])].sample(frac=1.0, random_state=SEED)
-    df = lab[lab.groupby("subject_id").cumcount().to_numpy() < cap].reset_index(drop=True)
-    df, _ = quality_control(df)
-    df = df[df["path"].astype(str) != "nan"].reset_index(drop=True)
-    d = pd.read_csv(MPOWER_DIR / "Demographics Survey.csv")
-    age = dict(zip(d["healthCode"].astype(str), d["age"]))
-    df["age"] = df["subject_id"].str.replace("mpower_", "", regex=False).map(age)
-    return df
+    """The shared mPower cohort (load_mpower_cohort): the SAME recordings the SSL arm
+    embeds, so fusion and the classifier comparison can join the two arms on the
+    recording path. This script used to draw its own recording per speaker, so a join on
+    subject_id could pair one recording's Praat features with another's embedding."""
+    df = load_mpower_cohort(cap=cap, seed=SEED)
+    return df[df["path"].astype(str) != "nan"].reset_index(drop=True)
 
 
 def extract(df, cap, max_subjects):
     from tqdm import tqdm
 
-    cache = EMBEDDINGS / f"mpower_classical__cap{cap}.csv"
+    cache = EMBEDDINGS / f"mpower_classical__cap{cap}__{FEATURE_VERSION}.csv"
     if cache.exists() and not max_subjects:
         f = pd.read_csv(cache)
-        # length AND columns must match: the feature set changed on 2026-09-06 and a
-        # stale 17-column cache would silently be reused for a 42-feature experiment
-        if len(f) == len(df) and list(f.columns) == FEATS:
+        # identity guard: the cache must hold these exact recordings, in this order, and the
+        # current feature set (a stale cache of the right length would silently misalign)
+        if (list(f.columns) == ["path", *FEATS]
+                and f["path"].tolist() == df["path"].astype(str).tolist()):
             print(f"  cache hit: {cache.name}")
-            return f
+            return f[FEATS]
         print(f"  cache stale ({len(f)} rows x {len(f.columns)} cols) -> re-extracting")
     rows = []
     for p in tqdm(df["path"], unit="rec"):
@@ -68,7 +62,7 @@ def extract(df, cap, max_subjects):
     F = pd.DataFrame(rows, columns=FEATS)
     if not max_subjects:
         cache.parent.mkdir(parents=True, exist_ok=True)
-        F.to_csv(cache, index=False)
+        F.assign(path=df["path"].astype(str).to_numpy())[["path", *FEATS]].to_csv(cache, index=False)
     return F
 
 
@@ -123,7 +117,7 @@ def main():
     y = df["label"].astype(int).to_numpy()
     # save labeled features for downstream feature analysis (SHAP / distributions)
     from pdvoice.config import LOGS
-    lab_out = df[["subject_id", "label", "age"]].reset_index(drop=True).join(F)
+    lab_out = df[["subject_id", "path", "label", "age"]].reset_index(drop=True).join(F)
     lab_out.to_csv(LOGS / f"classical_features_labeled__cap{args.cap}.csv", index=False)
 
     scenarios = {"baseline": np.ones(len(df), bool), "age-matched": df.subject_id.isin(age_match_ids(df)).to_numpy()}

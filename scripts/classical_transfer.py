@@ -38,10 +38,11 @@ from pdvoice.calibration import select_best_by_brier
 from pdvoice.cohort import age_match_ids, load_mpower_cohort
 from pdvoice.config import EMBEDDINGS, LOGS, SEED, VAL_FRACTION
 from pdvoice.data import LOADERS
+from pdvoice.data.splits import assign_folds
 from pdvoice.eval.discrimination import auprc, auroc, bootstrap_ci
 from pdvoice.eval.metrics import calibration_error, sensitivity_at_specificity, \
     threshold_metrics, youden_threshold
-from pdvoice.features.classical import FEATURE_NAMES, classical_features
+from pdvoice.features.classical import FEATURE_NAMES, FEATURE_VERSION, classical_features
 from pdvoice.models.head import fit_mlp_head
 from pdvoice.preprocess import quality_control
 
@@ -57,7 +58,7 @@ def extract(df: pd.DataFrame, tag: str) -> pd.DataFrame:
     """
     from tqdm import tqdm
 
-    cache = EMBEDDINGS / f"classical__{tag}.csv"
+    cache = EMBEDDINGS / f"classical__{tag}__{FEATURE_VERSION}.csv"
     if cache.exists():
         f = pd.read_csv(cache)
         if (list(f.columns) == ["path"] + list(FEATURE_NAMES)
@@ -103,6 +104,64 @@ def evaluate(y, p, thr, r) -> dict:
     return m
 
 
+def fit_prep(X):
+    """Median imputation and z-scoring with statistics from X (the training rows) only."""
+    med = np.nanmedian(X, axis=0)
+    Xi = np.where(np.isnan(X), med, X)
+    mu, sd = Xi.mean(0), Xi.std(0) + 1e-8
+    return lambda A: (np.where(np.isnan(A), med, A) - mu) / sd
+
+
+def fit_locked_head(X, y, groups, seed=SEED):
+    """Imputer/scaler, head, calibrator and threshold, all fitted without test data."""
+    tr, va = next(GroupShuffleSplit(1, test_size=VAL_FRACTION, random_state=seed)
+                  .split(X, y, groups))
+    prep = fit_prep(X[tr])
+    head, vlog = fit_mlp_head(prep(X[tr]), y[tr], prep(X[va]), y[va], seed=seed)
+    cal_name, cal = select_best_by_brier(vlog, y[va])
+    thr = youden_threshold(y[va], cal.predict_proba(vlog))
+    dev = next(head.parameters()).device
+
+    def score(A):
+        with torch.no_grad():
+            lg = head(torch.tensor(prep(A), dtype=torch.float32, device=dev)).squeeze(-1)
+        lg = lg.cpu().numpy()
+        return cal.predict_proba(lg), cal.ranking(lg)
+
+    return score, cal_name, thr, tr
+
+
+def within_cv(sub, X, y, seed=SEED):
+    """5-fold speaker-disjoint CV, the protocol the SSL within-mPower figure uses.
+
+    Before 2026-11-09 the within-mPower figure scored the locked model on the cohort it
+    was trained on, which is optimistic. Each fold now fits its own imputer, scaler,
+    head, calibrator and threshold on the training folds; the threshold metrics apply
+    each fold's own validation threshold to its own test participants.
+    """
+    dfa = assign_folds(sub.reset_index(drop=True), n_splits=5, seed=seed)
+    parts = []
+    for k in range(5):
+        trv = np.flatnonzero((dfa.fold != k).to_numpy())
+        te = np.flatnonzero((dfa.fold == k).to_numpy())
+        score, _, thr, _ = fit_locked_head(X[trv], y[trv], dfa.subject_id.to_numpy()[trv], seed)
+        p, r = score(X[te])
+        parts.append(pd.DataFrame({"subject_id": dfa.subject_id.to_numpy()[te], "y": y[te],
+                                   "p": p, "r": r, "thr": thr}))
+    g = (pd.concat(parts).groupby("subject_id")
+         .agg(y=("y", "first"), p=("p", "mean"), r=("r", "mean"), thr=("thr", "first")))
+    yy, pp, rr = g.y.to_numpy(), g.p.to_numpy(), g.r.to_numpy()
+    m = evaluate(yy, pp, 0.5, rr)
+    # threshold measures at each participant's own fold threshold: p >= thr  <=>  p - thr + 0.5 >= 0.5
+    shifted = evaluate(yy, pp - g.thr.to_numpy() + 0.5, 0.5, rr)
+    for k in ("accuracy", "sensitivity", "specificity", "ppv", "f1", "tn", "fp", "fn", "tp",
+              "balanced_accuracy", "npv"):
+        if k in shifted:
+            m[k] = shifted[k]
+    m["threshold"] = "per fold (validation Youden)"
+    return m
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--cap", type=int, default=3)
@@ -138,44 +197,23 @@ def main() -> None:
         sub, X, y = mp[mask].reset_index(drop=True), Xmp[mask], ymp[mask]
         print(f"\n[3] {scen}: {len(sub):,} recordings / {sub.subject_id.nunique():,} speakers")
 
-        # Impute and standardise using TRAINING statistics only, then reuse them on every
-        # external corpus. Fitting the scaler on an external set would leak its
-        # distribution into the locked model and stop it being a transfer test.
-        med = np.nanmedian(X, axis=0)
-        def prep(A):
-            A = np.where(np.isnan(A), med, A)
-            return (A - mu) / sd
-        Xi = np.where(np.isnan(X), med, X)
-        mu, sd = Xi.mean(0), Xi.std(0) + 1e-8
-        Xs = prep(X)
-
-        tr, va = next(GroupShuffleSplit(1, test_size=VAL_FRACTION, random_state=SEED)
-                      .split(Xs, y, sub.subject_id))
-        head, vlog = fit_mlp_head(Xs[tr], y[tr], Xs[va], y[va], seed=SEED)
-        cal_name, cal = select_best_by_brier(vlog, y[va])
-        thr = youden_threshold(y[va], cal.predict_proba(vlog))
+        # Locked model: imputation, scaling, head, calibrator and threshold are fitted on
+        # mPower training/validation rows only and reused unchanged on every external
+        # corpus. Fitting anything on an external set would stop it being a transfer test.
+        score, cal_name, thr, tr = fit_locked_head(X, y, sub.subject_id.to_numpy())
         print(f"      head trained on {len(tr):,} recordings "
               f"({sub.subject_id.iloc[tr].nunique():,} speakers); "
               f"calibrator={cal_name}; locked threshold={thr:.3f}")
 
-        dev = next(head.parameters()).device
-
-        def score(A):
-            with torch.no_grad():
-                lg = head(torch.tensor(A, dtype=torch.float32, device=dev)).squeeze(-1)
-            lg = lg.cpu().numpy()
-            return cal.predict_proba(lg), cal.ranking(lg)
-
-        s = subject_level(sub.subject_id, y, score(Xs))
-        within = evaluate(s.y.to_numpy(), s.p.to_numpy(), thr, s.r.to_numpy())
-        print(f"      within mPower      AUROC {within['auroc']:.3f} "
+        within = within_cv(sub, X, y)
+        print(f"      within mPower (5-fold CV) AUROC {within['auroc']:.3f} "
               f"{within['auroc_ci']}")
 
         block = {"calibrator": cal_name, "threshold": round(float(thr), 4),
                  "within_mpower": within, "transfer": {}}
         for ds, (df, A) in ext.items():
             sj = subject_level(df.subject_id, df.label.astype(int).to_numpy(),
-                               score(prep(A)))
+                               score(A))
             m = evaluate(sj.y.to_numpy(), sj.p.to_numpy(), thr, sj.r.to_numpy())
             m["transfer_drop_auroc"] = round(within["auroc"] - m["auroc"], 4)
             block["transfer"][ds] = m

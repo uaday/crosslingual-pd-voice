@@ -84,9 +84,18 @@ def extract_for_manifest(
 
     dataset = str(df["dataset"].iloc[0])
     cache_path = EMBEDDINGS / f"{dataset}__{model_key}__{pooling}__L{layer}.npz"
+    paths = df["path"].astype(str).to_numpy()
     if cache and cache_path.exists():
         d = np.load(cache_path, allow_pickle=True)
-        return d["X"], d["ids"]
+        # Identity guard: the cache is keyed only by dataset/model/pooling/layer, so it
+        # must also hold exactly these recordings. Rows are returned in df's order; a
+        # cache that lacks any requested recording (or predates the stored paths) is
+        # rebuilt instead of being returned as-is.
+        if "path" in d:
+            row = {p: i for i, p in enumerate(d["path"].astype(str))}
+            if all(p in row for p in paths):
+                take = np.array([row[p] for p in paths], dtype=int)
+                return d["X"][take], df.index.to_numpy()
 
     model_id = DEFAULT_MODELS.get(model_key, model_key)
     model, extractor, device = load_encoder(model_id, device)
@@ -106,5 +115,5 @@ def extract_for_manifest(
     ids = np.asarray(ids)
     if cache:
         cache_path.parent.mkdir(parents=True, exist_ok=True)
-        np.savez_compressed(cache_path, X=X, ids=ids)
+        np.savez_compressed(cache_path, X=X, ids=ids, path=paths)
     return X, ids

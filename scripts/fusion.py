@@ -56,32 +56,60 @@ def build_cohort():
           .reset_index(drop=True))
 
     cls = pd.read_csv(LOGS / f"classical_features_labeled__cap{CAP}.csv")
-    missing = [c for c in FEATS if c not in cls.columns]
+    missing = [c for c in ["path", *FEATS] if c not in cls.columns]
     if missing:
         raise SystemExit(
-            f"classical CSV is missing {len(missing)} of {len(FEATS)} features "
-            f"(e.g. {missing[:3]}) -- it predates the expanded set.\n"
-            "Re-run: scripts/classical_baseline.py --cap 1")
+            f"classical CSV is missing {missing[:3]} -- it predates the path-keyed, "
+            "full-file-window extraction.\nRe-run: scripts/classical_baseline.py --cap 1")
 
-    df = df.merge(cls[["subject_id", *FEATS]].drop_duplicates("subject_id"),
-                  on="subject_id", how="inner").reset_index(drop=True)
+    # join on the RECORDING, not the speaker: both arms must describe the same audio
+    df = df.merge(cls[["path", *FEATS]], on="path", how="inner").reset_index(drop=True)
+    assert df.subject_id.is_unique, "cap-1 cohort should hold one recording per speaker"
     X = d["X"][df.row.to_numpy()].astype(np.float32)
     assert len(X) == len(df)
     return df, X
 
 
-def within_cv(df, X, y):
+def fit_prep(X, cols):
+    """Median-impute and z-score the columns `cols` with statistics from X (training rows
+    only); other columns (the SSL embedding) pass through unchanged."""
+    if not len(cols):
+        return lambda A: A
+    C = X[:, cols].astype(float)
+    med = np.nanmedian(C, axis=0)
+    Ci = np.where(np.isnan(C), med, C)
+    mu, sd = Ci.mean(0), Ci.std(0) + 1e-8
+
+    def prep(A):
+        A = A.astype(np.float32, copy=True)
+        B = A[:, cols].astype(float)
+        A[:, cols] = (np.where(np.isnan(B), med, B) - mu) / sd
+        return A
+    return prep
+
+
+def within_cv(df, X, y, cols):
+    """Subject-disjoint 5-fold CV. Imputation and scaling are fitted on each training fold
+    alone (they used to be fitted on the whole cohort before the split, which let test
+    participants shape the training inputs). Each fold also records its operating
+    threshold, chosen by Youden's J on that fold's VALIDATION predictions, for McNemar."""
     df = assign_folds(df.reset_index(drop=True), n_splits=5)
     oof = []
     for k in range(5):
         tr, va, te = train_val_test_indices(df, test_fold=k)
-        m, _ = fit_mlp_head(X[tr], y[tr], X[va], y[va])
-        with torch.no_grad():
-            dev = next(m.parameters()).device
-            lg = m(torch.tensor(X[te], dtype=torch.float32, device=dev)).squeeze(-1)
-            p = torch.sigmoid(lg).cpu().numpy()
-        oof.append(pd.DataFrame({"s": df.loc[te, "subject_id"].to_numpy(), "y": y[te], "p": p}))
-    g = pd.concat(oof).groupby("s").agg(y=("y", "first"), p=("p", "mean")).reset_index()
+        prep = fit_prep(X[tr], cols)
+        m, _ = fit_mlp_head(prep(X[tr]), y[tr], prep(X[va]), y[va])
+        dev = next(m.parameters()).device
+
+        def prob(A):
+            with torch.no_grad():
+                lg = m(torch.tensor(prep(A), dtype=torch.float32, device=dev)).squeeze(-1)
+            return torch.sigmoid(lg).cpu().numpy()
+        thr = youden_threshold(y[va], prob(X[va]))
+        oof.append(pd.DataFrame({"s": df.loc[te, "subject_id"].to_numpy(), "y": y[te],
+                                 "p": prob(X[te]), "thr": thr}))
+    g = (pd.concat(oof).groupby("s")
+         .agg(y=("y", "first"), p=("p", "mean"), thr=("thr", "first")).reset_index())
     yy, pp = g["y"].to_numpy(), g["p"].to_numpy()
     a, lo, hi = bootstrap_ci(yy, pp, metric=auroc)
     return a, lo, hi, auprc(yy, pp), g
@@ -111,12 +139,12 @@ def pairwise_tests(preds):
             # DeLong asks whether one model RANKS better; McNemar asks whether the
             # decisions it actually makes are better. Those come apart -- a model can
             # rank better and decide no better -- so both are reported. Each model is
-            # binarised at ITS OWN Youden threshold, computed on its own scores:
-            # comparing decisions across a shared arbitrary cut such as 0.5 would
-            # largely measure which model happens to be better centred, not which one
-            # decides better.
-            da = (pa >= youden_threshold(y, pa)).astype(int)
-            db = (pb >= youden_threshold(y, pb)).astype(int)
+            # binarised at ITS OWN operating threshold, chosen by Youden's J on each
+            # fold's validation split (never on the predictions being tested): comparing
+            # decisions at a shared arbitrary cut such as 0.5 would largely measure which
+            # model happens to be better centred.
+            da = (pa >= m.thr_a.to_numpy()).astype(int)
+            db = (pb >= m.thr_b.to_numpy()).astype(int)
             mc = mcnemar_test(y, da, db)
 
             out[f"{a} vs {b}"] = {"delta": round(float(delta), 4),
@@ -131,20 +159,21 @@ def pairwise_tests(preds):
 
 
 def main():
-    print("=== Fusion: SSL + classical (mPower vowel, cap-1, XLS-R L15) ===")
+    print(f"=== Fusion: SSL + classical (mPower vowel, cap-1, XLS-R L{LAYER}) ===")
     df, S = build_cohort()
 
-    # classical: median-impute + z-score, applied identically to every feature set
-    C = df[FEATS].to_numpy(dtype=float)
-    C = np.where(np.isnan(C), np.nanmedian(C, axis=0), C)
-    C = (C - C.mean(0)) / (C.std(0) + 1e-8)
-
+    # classical features stay raw here; within_cv imputes and scales them per fold
+    C = df[FEATS].to_numpy(dtype=np.float32)
     F = np.hstack([S, C]).astype(np.float32)
     y = df["label"].astype(int).to_numpy()
     print(f"  cohort {len(df):,} · SSL {S.shape[1]}d · classical {C.shape[1]}d · "
           f"fusion {F.shape[1]}d\n")
 
     sets = {"SSL-only": S, "classical-only": C, "FUSION": F}
+    # which columns of each set are classical (imputed + scaled inside each fold)
+    ncls = C.shape[1]
+    cols = {"SSL-only": np.array([], int), "classical-only": np.arange(ncls),
+            "FUSION": np.arange(S.shape[1], S.shape[1] + ncls)}
     print(f"  {'scenario':<13}{'features':<16}{'AUROC':<22}{'AUPRC'}")
     results = {"cohort": len(df), "dims": {"ssl": S.shape[1], "classical": C.shape[1]},
                "scenarios": {}}
@@ -154,7 +183,8 @@ def main():
         results["scenarios"][scen] = {}
         preds = {}
         for name, X in sets.items():
-            a, lo, hi, ap, g = within_cv(df[mask].reset_index(drop=True), X[mask], y[mask])
+            a, lo, hi, ap, g = within_cv(df[mask].reset_index(drop=True), X[mask], y[mask],
+                                       cols[name])
             results["scenarios"][scen][name] = {"auroc": a, "auroc_ci": [lo, hi], "auprc": ap}
             g.to_csv(LOGS / f"fusion_preds__{scen}__{name.replace('-', '_')}.csv", index=False)
             preds[name] = g
