@@ -25,9 +25,13 @@ cycles. Speech analysis uses 25 ms / 10 ms, which is what we now pass explicitly
 
 ANALYSIS WINDOW
 ---------------
-Features are computed on the **same 2 s stable core the SSL path uses**, not the whole
-file, so the classical and embedding arms describe identical audio and the comparison
-between them is about representations rather than about which seconds were analysed.
+Features are computed on the **same 2 s stable core the SSL path uses**: the whole file
+is decoded and trimmed, and its central 2 s are kept, exactly as in
+``preprocess.preprocess_clip``. The two arms therefore describe the same seconds (to
+within a trim frame, since the trim runs at 44.1 kHz here and 16 kHz there), and the
+comparison between them is about representations rather than about which audio was
+analysed. Before 2026-11-09 only the first 4 s were decoded, which put this window near
+second 2 of a 10 s mPower file and the SSL window near second 5.
 
 AMPLITUDE
 ---------
@@ -73,15 +77,22 @@ def feature_names() -> list[str]:
 
 FEATURE_NAMES = feature_names()
 
+# Part of every feature-cache file name. Bump it whenever the extraction itself changes
+# (window, settings), so a cache keyed only on recording paths cannot be reused silently.
+# "core2s" = central 2 s of the whole trimmed file (2026-11-09), as in preprocess_clip.
+FEATURE_VERSION = "core2s"
+
 
 def _praat_sound(path):
     """The 2 s stable core at Praat's sample rate, as a parselmouth Sound."""
     import librosa
     import parselmouth
 
-    # decoding only the first 4 s is enough for a stationary sustained vowel and is
-    # much faster than reading a whole 10 s file
-    y, _ = librosa.load(str(path), sr=PRAAT_SR, duration=4.0, mono=True)
+    # Decode the WHOLE file, trim, then take the central 2 s: the same steps, in the same
+    # order, as preprocess.preprocess_clip, so both arms analyse the same seconds. (An
+    # earlier version decoded only the first 4 s, which centred this window on about
+    # second 2 of a 10 s mPower file while the SSL window sat at about second 5.)
+    y, _ = librosa.load(str(path), sr=PRAAT_SR, mono=True)
     y = stable_core(trim_silence(y), sr=PRAAT_SR, seconds=CORE_SECONDS).astype("float64")
     if len(y) < PRAAT_SR // 2:
         raise ValueError("less than 0.5 s of usable audio")

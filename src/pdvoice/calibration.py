@@ -116,6 +116,13 @@ def select_best_by_brier(val_logits, y_val):
     """Fit all candidates on the validation fold and return (name, fitted_calibrator).
 
     Selection is by validation Brier score, as specified in the proposal.
+
+    KNOWN LIMITATION: each candidate is fitted and scored on the same validation
+    observations, so the comparison is in-sample and favours isotonic regression (the
+    most flexible map). Reported calibration is still honest, because it is measured on
+    test folds or external data the selection never saw, but the chosen map may be worse
+    than another candidate. A fairer selection would score candidates on cross-fitted
+    validation predictions. Kept as is so that every reported number stays reproducible.
     """
     y_val = np.asarray(y_val)
     best_name, best_cal, best_brier = None, None, float("inf")

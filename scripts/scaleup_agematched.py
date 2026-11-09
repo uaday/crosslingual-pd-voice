@@ -97,11 +97,21 @@ def run_seed(df, X, cap, seed, conv, save_model=False):
         with torch.no_grad():
             tl = m(torch.tensor(Xa[te], dtype=torch.float32, device=dev)).squeeze(-1).cpu().numpy()
         _, cal = select_best_by_brier(vlog, y[va])
+        # operating threshold from THIS fold's validation split, never from the test
+        # predictions it is then used on
+        thr_k = youden_threshold(y[va], cal.predict_proba(vlog))
         oof.append(pd.DataFrame({"s": dfa.loc[te, "subject_id"].to_numpy(),
-                                 "y": y[te], "p": cal.predict_proba(tl), "r": cal.ranking(tl)}))
-    sg = pd.concat(oof).groupby("s").agg(y=("y", "first"), p=("p", "mean"), r=("r", "mean"))
-    thr_cv = youden_threshold(sg.y, sg.p)
-    within = block(sg.y.to_numpy(), sg.p.to_numpy(), thr_cv, sg.r.to_numpy())
+                                 "y": y[te], "p": cal.predict_proba(tl), "r": cal.ranking(tl),
+                                 "thr": thr_k}))
+    sg = pd.concat(oof).groupby("s").agg(y=("y", "first"), p=("p", "mean"), r=("r", "mean"),
+                                         thr=("thr", "first"))
+    # Each participant is in one test fold, so p >= thr_fold  <=>  p - thr_fold + 0.5 >= 0.5.
+    # (This used to pick one Youden threshold on the pooled out-of-fold predictions and
+    # then score those same predictions with it, which flatters sensitivity/specificity.)
+    yy, pp, rr = sg.y.to_numpy(), sg.p.to_numpy(), sg.r.to_numpy()
+    within = block(yy, pp, 0.5, rr)
+    within.update({k: v for k, v in block(yy, pp - sg.thr.to_numpy() + 0.5, 0.5, rr).items()
+                   if k in ("sensitivity", "specificity", "balanced_accuracy", "f1")})
 
     # ---- locked model -> externals ----
     tr, va = next(GroupShuffleSplit(1, test_size=VAL_FRACTION, random_state=seed)

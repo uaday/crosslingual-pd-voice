@@ -633,7 +633,8 @@ def t_classical_transfer() -> None:
        "tab:classical-transfer",
        "The classical branch uses the same head, the same calibrator selection and the "
        "same locked threshold as the self-supervised branch; imputation and scaling are "
-       "fitted on mPower alone and reused unchanged. Classical: one run; SSL: layer 11, "
+       "fitted on mPower training participants alone and reused unchanged. Within mPower: "
+       "five-fold participant-disjoint cross-validation for both. Classical: one run; SSL: layer 11, "
        "mean over five seeds (Table~\\ref{tab:u-exp1}). Values in bold are below 0.500 in "
        "the whole confidence interval (classical) or in every seed (SSL). Neither family "
        "transfers, and the IPVS inversion occurs for both, so it is not a property of the "
