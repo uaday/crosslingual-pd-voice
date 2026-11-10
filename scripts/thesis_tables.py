@@ -163,8 +163,8 @@ def t_baselines() -> None:
        "On the uncorrected cohort a single demographic variable outperforms a "
        "315-million-parameter speech encoder. After age matching the demographic baseline "
        "falls to chance and the voice model does not. Taking the best of five classifiers "
-       "lifts age alone slightly above chance, to 0.531; the single-classifier baseline used "
-       "in the rest of the thesis is 0.505.")
+       f"lifts age alone slightly above chance, to {best[('age-matched', 'age only (1)')]:.3f}; "
+       "the single-classifier baseline used in the rest of the thesis is 0.505.")
 
 
 # --------------------------------------------------------------- Chapter 4

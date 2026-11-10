@@ -58,6 +58,7 @@ from pdvoice.data.demographics import attach_age
 from pdvoice.data.splits import (assign_folds, ensure_two_class_val,
                                  train_val_test_indices)
 from pdvoice.eval.metrics import calibration_error
+from pdvoice.features.ssl import load_aligned
 from pdvoice.models.head import fit_mlp_head
 from pdvoice.preprocess import quality_control
 
@@ -136,10 +137,9 @@ def _clinical(ds, task):
         loud = d["rms_db"] >= SILENT_DBFS
         df, X = df[loud].reset_index(drop=True), d["X"][loud, LAYER]
     else:
-        d = np.load(EMBEDDINGS / f"{ds}__{MODEL}__{task}__L{LAYER}.npz", allow_pickle=True)
-        if "path" in d:
-            assert list(d["path"].astype(str)) == df.path.tolist(), f"{ds} {task}: cache order"
-        X = d["X"]
+        # rows are matched to the manifest by recording path; a cache that stores no paths,
+        # or lacks a requested recording, is refused (a row count cannot identify recordings)
+        X = load_aligned(EMBEDDINGS / f"{ds}__{MODEL}__{task}__L{LAYER}.npz", df.path)
     assert len(X) == len(df)
     m = common_task_mask(df, ds)
     return attach_age(df[m].reset_index(drop=True), ds), X[m]

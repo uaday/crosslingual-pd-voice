@@ -235,6 +235,29 @@ def test_transfer_any_cache_needs_matching_recordings_not_speakers(tmp_path):
     assert ta.embed(df, 15, f)[:, 0].tolist() == [1.0, 2.0]
 
 
+def test_unified_clinical_loader_requires_recording_paths(tmp_path, monkeypatch):
+    """The primary loader of Chapter 4 must not accept a cache on its row count alone."""
+    import unified_experiments as u
+    df = pd.DataFrame({"subject_id": ["s1", "s2"], "path": ["a.wav", "b.wav"], "label": [0, 1],
+                       "task_kind": "vowel", "task_code": "A"})
+    monkeypatch.setitem(u.LOADERS, "probe", lambda: df.copy())
+    monkeypatch.setattr(u, "quality_control", lambda d: (d, None))
+    monkeypatch.setattr(u, "common_task_mask", lambda d, ds: np.ones(len(d), dtype=bool))
+    monkeypatch.setattr(u, "attach_age", lambda d, ds: d)
+    monkeypatch.setattr(u, "EMBEDDINGS", tmp_path)
+    monkeypatch.setattr(u, "CLEAN_ALL", False)
+    f = tmp_path / f"probe__{u.MODEL}__vowel__L{u.LAYER}.npz"
+    _cache(f, None, np.array([[22.0], [11.0]]))                # right row count, no identity
+    with pytest.raises(ValueError, match="no recording paths"):
+        u._clinical("probe", "vowel")
+    _cache(f, ["x.wav", "y.wav"], np.array([[22.0], [11.0]]))  # other recordings
+    with pytest.raises(ValueError, match="not in the cache"):
+        u._clinical("probe", "vowel")
+    _cache(f, ["b.wav", "a.wav"], np.array([[2.0], [1.0]]))    # right recordings, reordered
+    d, X = u._clinical("probe", "vowel")
+    assert d.path.tolist() == ["a.wav", "b.wav"] and X[:, 0].tolist() == [1.0, 2.0]
+
+
 def test_transfer_any_binary_evaluation_drops_unknown_diagnoses(tmp_path, monkeypatch):
     import transfer_any as ta
     df = pd.DataFrame({"subject_id": ["a", "b", "c"], "path": ["a.wav", "b.wav", "c.wav"],
