@@ -145,6 +145,12 @@ def t_prevalence() -> None:
 def t_baselines() -> None:
     c = pd.read_csv(LOGS / "classifier_comparison.csv")
     best = c.groupby(["cohort", "features"]).AUROC.max()
+    # classifier_comparison.py skips the neural head for the single age feature, so age
+    # alone is the best of fewer classifiers than the acoustic feature sets
+    n_clf = c.groupby("features").classifier.nunique()
+    word = {3: "three", 4: "four", 5: "five", 6: "six"}
+    assert n_clf["classical (42)"] == n_clf["SSL embeddings (2048)"]
+    n_voice, n_age = word[n_clf["SSL embeddings (2048)"]], word[n_clf["age only (1)"]]
     order = [("age only (1)", "Age alone (1 feature)"),
              ("classical (42)", "Classical acoustic (42)"),
              ("SSL embeddings (2048)", "SSL embeddings (2048)")]
@@ -157,12 +163,12 @@ def t_baselines() -> None:
                      b(am) if key.startswith("SSL") else f"{am:.3f}"])
     _w("t3_4_baselines.tex",
        _tab(["Feature set", "Uncorrected cohort", "Age-matched cohort"], rows, "lrr"),
-       "Subject-level AUROC on mPower by feature set, best of five classifiers, under the "
-       "two evaluation protocols.",
+       f"Subject-level AUROC on mPower by feature set, best of {n_voice} classifiers "
+       f"({n_age} for age alone), under the two evaluation protocols.",
        "tab:baselines",
        "On the uncorrected cohort a single demographic variable outperforms a "
        "315-million-parameter speech encoder. After age matching the demographic baseline "
-       "falls to chance and the voice model does not. Taking the best of five classifiers "
+       f"falls to chance and the voice model does not. Taking the best of {n_age} classifiers "
        f"lifts age alone slightly above chance, to {best[('age-matched', 'age only (1)')]:.3f}; "
        "the single-classifier baseline used in the rest of the thesis is 0.505.")
 
