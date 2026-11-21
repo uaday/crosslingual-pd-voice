@@ -52,8 +52,8 @@ The data are not in this repository. Each dataset goes in its own folder under
 | Dataset | Folder | How to obtain |
 |---|---|---|
 | mPower | `pd-datasets/mpower/` | Synapse, study syn4993293; registered account and acceptance of the study's conditions of use |
-| NeuroVoz | `pd-datasets/neurovoz_v3/` | Public release (Mendes-Laureano et al., Scientific Data 2024) |
-| IPVS | `pd-datasets/Italian Parkinson's Voice and speech/` | Public release (Dimauro et al., IEEE Access 2017) |
+| NeuroVoz | `pd-datasets/neurovoz_v3/` | Zenodo, doi:10.5281/zenodo.10777656; restricted record, access on request under its data usage agreement (Mendes-Laureano et al., Scientific Data 2024) |
+| IPVS | `pd-datasets/Italian Parkinson's Voice and speech/` | IEEE DataPort, doi:10.21227/aw6b-tg17; open access (Dimauro et al., IEEE Access 2017) |
 | MDVR-KCL | `pd-datasets/26-29_09_2017_KCL/` | Zenodo, doi:10.5281/zenodo.2867215 |
 | Bridge2AI-Voice (adult) | `pd-datasets/bridge2ai/` | Controlled access only: application and Data Transfer and Use Agreement through the consortium's Data Access Compliance Office (DACO@b2ai-voice.org). |
 

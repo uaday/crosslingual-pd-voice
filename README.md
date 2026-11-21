@@ -62,8 +62,8 @@ Each dataset goes in its own folder under `pd-datasets/` (paths are set in
 |---|---|---|---|
 | mPower | English | `pd-datasets/mpower/` | Synapse study syn4993293 (registered account, accept the conditions of use); `pd-datasets/mpower/download_mpower.py` |
 | Bridge2AI-Voice (adult) | English | `pd-datasets/bridge2ai/` | Controlled access through the consortium's Data Access Compliance Office (DACO@b2ai-voice.org); `scripts/download_bridge2ai.py` |
-| NeuroVoz | Spanish | `pd-datasets/neurovoz_v3/` | Public release (Mendes-Laureano et al., *Scientific Data*, 2024) |
-| IPVS | Italian | `pd-datasets/Italian Parkinson's Voice and speech/` | Public release (Dimauro et al., *IEEE Access*, 2017) |
+| NeuroVoz | Spanish | `pd-datasets/neurovoz_v3/` | Zenodo, doi:10.5281/zenodo.10777656; access on request under its data usage agreement (Mendes-Laureano et al., *Scientific Data*, 2024) |
+| IPVS | Italian | `pd-datasets/Italian Parkinson's Voice and speech/` | IEEE DataPort, doi:10.21227/aw6b-tg17; open access (Dimauro et al., *IEEE Access*, 2017) |
 | MDVR-KCL | English | `pd-datasets/26-29_09_2017_KCL/` | Zenodo, doi:10.5281/zenodo.2867215 |
 
 `scripts/download_bridge2ai.py` reads a Synapse personal access token from
